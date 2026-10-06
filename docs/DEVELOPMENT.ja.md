@@ -201,6 +201,7 @@ ssh steamos@<headset-ip> 'cd ~/frame-mic-tuner && cmake -G Ninja -S . -B build &
 - `--dump-png` は今の実際の値で描く。`--fake` か `--fake-*` を付けると実際の値を読まずにダミーで描く（`--fake-echo on|off`・`--fake-ns on|off`・`--fake-idle`・`--fake-loading`・`--fake-autostart on|off|missing|unknown`・`--fake-error read|not-installed|links|write|autostart`）。`--preview-quit` で「もう一度押すと終了」の状態、`--language ja|en` で言語を指定
 - 声のチェックの見た目: `--fake-recording`（録音中）・`--fake-history N`（ダミーの履歴 N 件）・`--fake-playing I`（I 件目を再生中）・`--fake-voice-error record|play`・`--preview-pressed earphone|speaker|record`（押している間）
 - ノイズ除去の強さの見た目: `--fake-ns-vad N`・`--fake-ns-grace N`（ダミーの値）・`--preview-drag-vad N`・`--preview-drag-grace N`（そのバーを N までドラッグしている）
+- ミュートの見た目: `--fake-muted`（既定のマイクがミュート中。見出しのバッジが赤い「ミュート中」になり、更新の帯の場所にミュートの帯と［ミュートを解除］が出る）・`--fake-error write-mute`（解除に失敗した）
 - `contrib/icons/frame-mic-tuner-{48,128,256}.png` は `--thumbnail-png` で書き出したもの（ダッシュボードのサムネイルと同じ絵）
 - `--test-record [秒]` は録音の前・中・後の `pw-metadata -n filters` も出す。音声はメモリの中だけ
 - ヘッドセットなしで閉じる動きを見る: 常駐に `--debug-record-on-open`（パネルが開いたら自動で録音）、別の端末から `--probe-switch-away [秒]`（アイコンの PNG を入れた一時的なダッシュボードのオーバーレイを作って `ShowDashboard` で切り替え、Mic のパネルを閉じた状態にする。画像の無いオーバーレイには切り替わらなかった）
