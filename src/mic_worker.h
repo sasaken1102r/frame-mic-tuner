@@ -19,6 +19,7 @@ struct MicCommand {
         SetAutostart,  ///< 自動起動（value = 有効）
         SetNsParams,   ///< ノイズ除去の強さ（vad・grace）
         SetPreset,     ///< プリセット（value = スピーカー）。エコー除去 → ノイズ除去の順に書いてから 1 回だけ読み直す
+        Unmute,        ///< 既定のマイクのミュートを解除する（wpctl set-mute @DEFAULT_AUDIO_SOURCE@ 0）
     };
     Kind kind;
     bool value = false;

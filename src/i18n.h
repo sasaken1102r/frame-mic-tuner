@@ -137,6 +137,12 @@ struct UiText {
     const char* updateErrInterrupted;
     const char* updateErrIo;
     const char* updateErrOther;  ///< 知らない理由・usage・script-failed・spawn-failed もここに落ちる
+
+    // ---- ミュート（既定のマイクがミュートされているとき） ----
+    const char* micMuted;       ///< 見出しのバッジ（ミュート中）
+    const char* mutedBanner;    ///< ミュートの帯の文
+    const char* unmute;         ///< 「ミュートを解除」ボタン
+    const char* errWriteMute;   ///< ミュートを解除できない（wpctl）
 };
 
 /**

@@ -72,6 +72,7 @@ struct Options {
     bool fakeNs = false;
     bool fakeIdle = false;
     bool fakeLoading = false;
+    bool fakeMuted = false;
     Autostart fakeAutostart = Autostart::Disabled;
     MicError fakeError = MicError::None;
     // 声のチェックのダミー（--dump-png 用）
@@ -175,8 +176,9 @@ void printUsage() {
         "      --fake-echo on|off / --fake-ns on|off   ダミーのエコー除去・ノイズ除去\n"
         "      --fake-idle       マイク未使用\n"
         "      --fake-loading    まだ読んでいない状態\n"
+        "      --fake-muted      既定のマイクがミュートされている（ミュート中のバッジと帯）\n"
         "      --fake-autostart on|off|missing|unknown  自動起動の状態（missing = ユニットファイルが無い）\n"
-        "      --fake-error read|not-installed|links|write|write-echo|write-ns|autostart  赤い失敗の表示\n"
+        "      --fake-error read|not-installed|links|write|write-echo|write-ns|write-mute|autostart  赤い失敗の表示\n"
         "      --fake-recording  録音中（メーター・経過）の見た目\n"
         "      --fake-history N  ダミーの履歴を N 件（0〜5）\n"
         "      --fake-playing I  履歴の I 件目（0 が最新）を再生中にする\n"
@@ -292,6 +294,9 @@ bool parseOptions(int argc, char** argv, Options& options) {
         } else if (arg == "--fake-loading") {
             options.fakeLoading = true;
             options.fake = true;
+        } else if (arg == "--fake-muted") {
+            options.fakeMuted = true;
+            options.fake = true;
         } else if (arg == "--fake-autostart" && hasNext) {
             const std::string state = argv[++i];
             if (state == "on") {
@@ -321,10 +326,12 @@ bool parseOptions(int argc, char** argv, Options& options) {
                 options.fakeError = MicError::WriteEcho;
             } else if (kind == "write-ns") {
                 options.fakeError = MicError::WriteNs;
+            } else if (kind == "write-mute") {
+                options.fakeError = MicError::WriteMute;
             } else if (kind == "autostart") {
                 options.fakeError = MicError::WriteAutostart;
             } else {
-                std::fprintf(stderr, "--fake-error は read / not-installed / links / write / write-echo / write-ns / autostart です: %s\n",
+                std::fprintf(stderr, "--fake-error は read / not-installed / links / write / write-echo / write-ns / write-mute / autostart です: %s\n",
                              kind.c_str());
                 return false;
             }
@@ -430,10 +437,11 @@ void logState(const MicState& state) {
     const UiText& text = uiText(Language::Ja);
     const MicError error = state.writeError != MicError::None ? state.writeError : state.readError;
     const NsParams& ns = state.nsParams;
-    std::fprintf(stderr, "[マイク] 表示を更新: エコー除去 %s・ノイズ除去 %s（%s）・%s・%s・自動起動 %s%s%s\n",
+    std::fprintf(stderr, "[マイク] 表示を更新: エコー除去 %s・ノイズ除去 %s（%s）・%s・%s・%s・自動起動 %s%s%s\n",
                  onOff(state.echoKnown, state.echo), onOff(state.nsKnown, state.ns), describeNsParams(ns).c_str(),
-                 !state.linksKnown ? "使用中か不明" : (state.inUse ? "使用中" : "未使用"), describeChain(state).c_str(),
-                 autostartName(state.autostart), error != MicError::None ? "・失敗: " : "",
+                 !state.linksKnown ? "使用中か不明" : (state.inUse ? "使用中" : "未使用"),
+                 !state.muteKnown ? "ミュート不明" : (state.muted ? "ミュート中" : "ミュートなし"),
+                 describeChain(state).c_str(), autostartName(state.autostart), error != MicError::None ? "・失敗: " : "",
                  errorText(error, text).c_str());
 }
 
@@ -453,6 +461,8 @@ void printState(const MicState& state) {
         std::printf("プリセット: %s\n", preset);
     }
     std::printf("マイク: %s\n", !state.linksKnown ? "読めません" : (state.inUse ? "使用中" : "未使用"));
+    std::printf("ミュート（既定のマイク、wpctl get-volume @DEFAULT_AUDIO_SOURCE@）: %s\n",
+                !state.muteKnown ? "読めません" : (state.muted ? "ミュート中" : "ミュートなし"));
     std::printf("つながり: %s\n", describeChain(state).c_str());
     if (!state.users.empty()) {
         std::printf("マイクから音を取っているノード:");
@@ -481,6 +491,7 @@ int runPrint(const Options& options) {
             case MicCommand::Kind::SetAutostart: ok = writeAutostart(command.value); break;
             case MicCommand::Kind::SetNsParams: break;  // 下でまとめて扱う
             case MicCommand::Kind::SetPreset: break;    // --print からは使わない
+            case MicCommand::Kind::Unmute: break;       // --print からは使わない
         }
         if (!ok) {
             writeError = command.kind == MicCommand::Kind::SetAutostart ? MicError::WriteAutostart
@@ -515,6 +526,8 @@ MicState fakeState(const Options& options) {
     state.ns = options.fakeNs;
     state.linksKnown = true;
     state.inUse = !options.fakeIdle;
+    state.muteKnown = true;
+    state.muted = options.fakeMuted;
     if (state.inUse) {
         // tracker と同じ: 使用中は EQ が必ず入り、エコー除去・ノイズ除去は設定しだい
         state.chain.push_back({ChainStage::Kind::Eq, "eq"});
@@ -530,7 +543,7 @@ MicState fakeState(const Options& options) {
     state.nsParams.grace = options.fakeNsGrace;
     const MicError error = options.fakeError;
     if (error == MicError::WriteSettings || error == MicError::WriteAutostart || error == MicError::WriteEcho ||
-        error == MicError::WriteNs) {
+        error == MicError::WriteNs || error == MicError::WriteMute) {
         state.writeError = error;
     } else if (error != MicError::None) {
         state.readError = error;
@@ -853,6 +866,19 @@ int runSelfTest() {
     expect("ノイズ除去の強さ: 範囲外を丸める（150% → 99%、-5ms → 0ms、512ms → 510ms）",
            clampNsVad(150) == 99.0 && clampNsGrace(-5) == 0.0 && clampNsGrace(512) == 510.0);
 
+    // wpctl get-volume @DEFAULT_AUDIO_SOURCE@ の出力（ミュート）
+    bool muted = true;
+    expect("wpctl get-volume: 「Volume: 1.00」→ ミュートなし", parseMute("Volume: 1.00\n", muted) && !muted);
+    muted = false;
+    expect("wpctl get-volume: 「Volume: 1.00 [MUTED]」→ ミュート中", parseMute("Volume: 1.00 [MUTED]\n", muted) && muted);
+    muted = false;
+    expect("wpctl get-volume: 「Volume: 0.35 [MUTED]」（音量が 1 以外）→ ミュート中",
+           parseMute("Volume: 0.35 [MUTED]\n", muted) && muted);
+    muted = true;
+    expect("wpctl get-volume: 不正な出力（空・エラー文・数字なし・知らない印）→ 読めない（値は変えない）",
+           !parseMute("", muted) && !parseMute("Translate ID error: '@DEFAULT_AUDIO_SOURCE@' is not a valid ID\n", muted) &&
+               !parseMute("Volume: \n", muted) && !parseMute("Volume: 1.00 [WHAT]\n", muted) && muted);
+
     // 設定ファイル: タブ（と言語・ノイズ除去の強さ）を保存して読み直すと同じになる（一時ファイルで試して消す）
     {
         char path[] = "/tmp/frame-mic-tuner-selftest-XXXXXX";
@@ -952,6 +978,47 @@ int runSelfTest() {
         panel.buttonCenter(PanelAction::UpdateInstall, x, y);
         const PanelHit second = panel.pointerDown(x, y, 0.3);
         expect("更新の帯: 確認中にもう一度「更新する」を押すと更新する", second.action == PanelAction::UpdateInstall);
+    }
+
+    // ミュート: ミュート中は更新の帯の場所に「ミュートを解除」を出し（両方のタブ）、押すと Unmute が返る。
+    // ミュートでないとき・読めないときは出さない
+    {
+        FontSet fonts;
+        fonts.load(kFontPath, kBoldFontPath);
+        MicPanel panel(fonts);
+        Config config;
+        MicState state;
+        state.loaded = state.linksKnown = true;
+        state.muteKnown = state.muted = true;
+        double x = 0.0;
+        double y = 0.0;
+        bool shownBoth = true;
+        for (const PanelTab tab : {PanelTab::Quick, PanelTab::Fine}) {
+            config.tab = tab;
+            panel.render(config, state, VoiceView());
+            shownBoth = shownBoth && panel.buttonCenter(PanelAction::Unmute, x, y) &&
+                        !panel.buttonCenter(PanelAction::UpdateCheckNow, x, y);
+        }
+        expect("ミュート: ミュート中は両方のタブで「ミュートを解除」を出す（更新の帯の代わり）", shownBoth);
+        panel.buttonCenter(PanelAction::Unmute, x, y);
+        const PanelHit hit = panel.pointerDown(x, y, 0.0);
+        panel.pointerUp();
+        expect("ミュート: 「ミュートを解除」は確認なしの 1 回で Unmute を返す", hit.action == PanelAction::Unmute);
+        state.muted = false;
+        panel.render(config, state, VoiceView());
+        const bool hiddenWhenOff = !panel.buttonCenter(PanelAction::Unmute, x, y) &&
+                                   panel.buttonCenter(PanelAction::UpdateCheckNow, x, y);
+        state.muteKnown = false;
+        state.muted = true;  // 読めていない値は使わない
+        panel.render(config, state, VoiceView());
+        const bool hiddenWhenUnknown = !panel.buttonCenter(PanelAction::Unmute, x, y);
+        expect("ミュート: ミュートでないとき・読めないときは出さず、更新の帯のまま", hiddenWhenOff && hiddenWhenUnknown);
+        MicState other = state;
+        other.muteKnown = true;
+        MicState unmuted = other;
+        unmuted.muted = false;
+        expect("ミュート: 読めたかどうか・ミュートかどうかが変わると描き直す",
+               !sameMicState(state, other) && !sameMicState(other, unmuted) && sameMicState(other, other));
     }
 
     std::printf("%d 件中 %d 件が不合格\n", total, failures);
@@ -1075,6 +1142,10 @@ void handleAction(PanelHit hit, Config& config, const std::string& configPath, M
         case PanelAction::AutostartOff:
             std::fprintf(stderr, "[操作] SteamVR と一緒に起動 %s\n", action == PanelAction::AutostartOn ? "オン" : "オフ");
             worker.request({MicCommand::Kind::SetAutostart, action == PanelAction::AutostartOn});
+            return;
+        case PanelAction::Unmute:
+            std::fprintf(stderr, "[操作] ミュートを解除\n");
+            worker.request({MicCommand::Kind::Unmute});
             return;
         case PanelAction::LanguageJa:
         case PanelAction::LanguageEn: {

@@ -52,6 +52,10 @@ constexpr Color kSuccessTint = blendColor(kSuccess, kBg, 0.15);
 constexpr Color kDanger = hexColor(0xf85149);     ///< 失敗・録音中
 constexpr Color kDangerTint = blendColor(kDanger, kCard, 0.18);  ///< 録音中の停止ボタンの塗り
 constexpr Color kQuitFill = blendColor(kDanger, kBg, 0.12);      ///< 終了ボタンの塗り（控えめ）
+// ---- ミュート中（見出しのバッジと、ミュートの帯。色だけで伝えない。マイクに斜線の絵と文字も付ける） ----
+constexpr Color kMuteFill = hexColor(0x3a1a1c);    ///< 地
+constexpr Color kMuteText = hexColor(0xff8a80);    ///< 文字・絵
+constexpr Color kMuteBorder = hexColor(0xe5534b);  ///< 枠
 
 /** コントラストの確かめ方の種類。 */
 enum class ContrastKind {

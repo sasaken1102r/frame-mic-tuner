@@ -5,6 +5,7 @@
 #include "json.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <map>
@@ -21,6 +22,8 @@ constexpr const char* kLoopbackStreamPrefix = "alsa_loopback_stream.alsa_input."
 constexpr const char* kLoopbackDevicePrefix = "alsa_loopback_device.alsa_input.";
 /** 通り道の段の上限（ループしてもここで止める）。 */
 constexpr int kMaxStages = 8;
+/** wpctl で既定のマイクを指す名前（ミュートの読み書き）。 */
+constexpr const char* kDefaultSource = "@DEFAULT_AUDIO_SOURCE@";
 
 /**
  * 文字列が接頭辞で始まるか。
@@ -98,6 +101,20 @@ bool readSetting(const char* key, bool& value, MicError& error) {
     std::fprintf(stderr, "[マイク] 設定を読めません: %s%s\n", describeCommand(argv, result).c_str(),
                  notFound ? "（設定が見つかりません）" : "");
     error = notFound ? MicError::NotInstalled : MicError::ReadSettings;
+    return false;
+}
+
+/**
+ * 既定のマイクのミュートを読む（wpctl get-volume @DEFAULT_AUDIO_SOURCE@）。
+ * @param muted 読めたときの書き込み先
+ * @return 読めたら true
+ */
+bool readMute(bool& muted) {
+    const std::vector<std::string> argv = {"wpctl", "get-volume", kDefaultSource};
+    const CommandResult result = runCommand(argv);
+    if (result.ok() && parseMute(result.out, muted)) return true;
+    std::fprintf(stderr, "[マイク] ミュートを読めません: %s（出力: %s）\n", describeCommand(argv, result).c_str(),
+                 trim(result.out).c_str());
     return false;
 }
 
@@ -196,6 +213,27 @@ void parseLinks(const std::string& text, MicState& state) {
     }
 }
 
+bool parseMute(const std::string& text, bool& muted) {
+    // "Volume: 1.00" か "Volume: 1.00 [MUTED]"（1 行だけ）。音量の数字が無いものは読めない扱い
+    const std::string line = trim(text.substr(0, text.find('\n')));
+    const std::string prefix = "Volume: ";
+    if (!startsWith(line, prefix) || line.size() == prefix.size() ||
+        !std::isdigit(static_cast<unsigned char>(line[prefix.size()]))) {
+        return false;
+    }
+    const size_t numberEnd = line.find(' ', prefix.size());
+    const std::string rest = numberEnd == std::string::npos ? "" : trim(line.substr(numberEnd));
+    if (rest.empty()) {
+        muted = false;
+        return true;
+    }
+    if (rest == "[MUTED]") {
+        muted = true;
+        return true;
+    }
+    return false;  // 知らない印
+}
+
 Autostart parseAutostart(const std::string& text) {
     const std::string first = trim(text.substr(0, text.find('\n')));
     if (first == "not-found") return Autostart::Missing;
@@ -232,6 +270,9 @@ MicState readMicState(bool withAutostart) {
         if (state.readError == MicError::None) state.readError = MicError::ReadLinks;
     }
 
+    // ミュート（Steam・wpctl・aux ボタンなど、どこから入っても気づけるよう、毎回読む）。読めなくても失敗の表示はしない
+    state.muteKnown = readMute(state.muted);
+
     state.nsParams = readNsParams();
 
     if (!withAutostart) return state;
@@ -258,8 +299,9 @@ bool sameMicState(const MicState& a, const MicState& b) {
     const bool sameNs = pa.nodeKnown == pb.nodeKnown && pa.nodeId == pb.nodeId && pa.vadKnown == pb.vadKnown &&
                         pa.vad == pb.vad && pa.graceKnown == pb.graceKnown && pa.grace == pb.grace;
     return a.loaded == b.loaded && a.echoKnown == b.echoKnown && a.echo == b.echo && a.nsKnown == b.nsKnown &&
-           a.ns == b.ns && a.linksKnown == b.linksKnown && a.inUse == b.inUse && a.autostart == b.autostart &&
-           sameNs && a.readError == b.readError && a.writeError == b.writeError;
+           a.ns == b.ns && a.linksKnown == b.linksKnown && a.inUse == b.inUse && a.muteKnown == b.muteKnown &&
+           a.muted == b.muted && a.autostart == b.autostart && sameNs && a.readError == b.readError &&
+           a.writeError == b.writeError;
 }
 
 double clampNsVad(double value) {
@@ -341,6 +383,20 @@ bool writeSetting(const char* key, bool value) {
     MicError error = MicError::None;
     if (!readSetting(key, now, error) || now != value) {
         std::fprintf(stderr, "[マイク] 書いた値を読み返せません（%s）\n", key);
+        return false;
+    }
+    return true;
+}
+
+bool writeUnmute() {
+    const std::vector<std::string> argv = {"wpctl", "set-mute", kDefaultSource, "0"};
+    const CommandResult result = runCommand(argv);
+    std::fprintf(stderr, "[マイク] %s\n", describeCommand(argv, result).c_str());
+    if (!result.ok()) return false;
+    // 書いたあとに読み返して、ミュートが外れたことを確かめる
+    bool muted = true;
+    if (!readMute(muted) || muted) {
+        std::fprintf(stderr, "[マイク] ミュートが外れたことを確かめられません\n");
         return false;
     }
     return true;

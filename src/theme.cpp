@@ -152,6 +152,17 @@ const std::vector<ContrastPair>& contrastPairs() {
         {"更新の帯の「更新する」の文字（アクセントの塗り）", kOnAccent, kAccent, ContrastKind::Text},
         {"更新の帯の「更新する」の文字（押している間）", kOnAccent, kAccentPressed, ContrastKind::Text},
         {"更新の帯の「更新する」の塗り（カード）", kAccent, kCard, ContrastKind::Ui},
+        // ミュート中: 見出しのバッジ（パネルの地の上）と、更新の帯の場所に出すミュートの帯
+        {"「ミュート中」のバッジの文字", kMuteText, kMuteFill, ContrastKind::Text},
+        {"「ミュート中」のバッジの絵（マイクに斜線）", kMuteText, kMuteFill, ContrastKind::Ui},
+        {"「ミュート中」のバッジの枠（パネルの地）", kMuteBorder, kBg, ContrastKind::Ui},
+        {"「ミュート中」のバッジの枠（バッジの地）", kMuteBorder, kMuteFill, ContrastKind::Ui},
+        {"ミュートの帯の文", kMuteText, kMuteFill, ContrastKind::Text},
+        {"ミュートの帯の赤い枠（パネルの地）", kMuteBorder, kBg, ContrastKind::Ui},
+        {"ミュートの帯の赤い枠（帯の地）", kMuteBorder, kMuteFill, ContrastKind::Ui},
+        {"「ミュートを解除」の文字", kText, kControl, ContrastKind::Text},
+        {"「ミュートを解除」の文字（乗っている・押している）", kText, kControlHover, ContrastKind::Text},
+        {"「ミュートを解除」の枠（帯の地）", kBorder, kMuteFill, ContrastKind::Ui},
     };
     return pairs;
 }

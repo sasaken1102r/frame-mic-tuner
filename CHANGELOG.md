@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Mute indicator: the panel notices when the default mic is muted, however it was muted (Steam, `wpctl set-mute`, an aux button shortcut, ...), by reading `wpctl get-volume @DEFAULT_AUDIO_SOURCE@` with the rest of the state. While muted, the header badge turns into a red "Muted" with a crossed-out mic, and a red "Mic is muted" band with an **Unmute** button replaces the update card on both tabs (the update card comes back once unmuted). **Unmute** runs `wpctl set-mute @DEFAULT_AUDIO_SOURCE@ 0` without asking first; if that fails, the bottom line says so. Nothing looks different while the mic is not muted.
+
 ## 0.2.0 (2026-09-27)
 
 First release with a prebuilt package (`frame-mic-tuner-<version>.tar.gz` + `SHA256SUMS`, built by `scripts/package.sh`); `install.sh` now installs either from that tarball or, as before, by building from a source checkout.

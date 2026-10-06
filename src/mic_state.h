@@ -72,6 +72,7 @@ enum class MicError {
     WriteNsParams,   ///< ノイズ除去の強さを変えられない（pw-cli）
     WriteEcho,       ///< プリセットのうち、エコー除去の切り替えに失敗（wpctl）
     WriteNs,         ///< プリセットのうち、ノイズ除去の切り替えに失敗（wpctl）
+    WriteMute,       ///< ミュートを解除できない（wpctl set-mute）
 };
 
 /** ノイズ除去の段の今の値（pw-dump ns_capture から読む）。 */
@@ -93,6 +94,8 @@ struct MicState {
     bool ns = false;            ///< ノイズ除去（true = オン）
     bool linksKnown = false;    ///< マイクから出力までのつながりをたどれたか
     bool inUse = false;         ///< マイク使用中（通り道にフィルターが入っている）
+    bool muteKnown = false;     ///< 既定のマイクのミュートが読めたか
+    bool muted = false;         ///< 既定のマイクがミュートされている（Steam・wpctl・aux ボタンなど、どこから入っても）
     std::vector<ChainStage> chain;   ///< マイクと出力の間に入っているフィルター（順番どおり）
     std::vector<std::string> users;  ///< マイクから音を取っているノード（--print 用）
     Autostart autostart = Autostart::Unknown;
@@ -135,6 +138,20 @@ void parseLinks(const std::string& text, MicState& state);
 Autostart parseAutostart(const std::string& text);
 
 /**
+ * 「wpctl get-volume @DEFAULT_AUDIO_SOURCE@」の出力からミュートを読む（例: "Volume: 1.00 [MUTED]"）。
+ * @param text 出力
+ * @param muted 読めたときの書き込み先（[MUTED] があれば true）
+ * @return 読めたら true（"Volume:" で始まらない出力は false）
+ */
+bool parseMute(const std::string& text, bool& muted);
+
+/**
+ * 既定のマイクのミュートを解除する（wpctl set-mute @DEFAULT_AUDIO_SOURCE@ 0）。解除できたかは読み返して確かめる。
+ * @return 解除できたら true
+ */
+bool writeUnmute();
+
+/**
  * 「pw-dump ns_capture」の出力（JSON）から、ノードの id と判定の厳しさ・余韻を読む。
  * @param text 出力
  * @return 読めた値（ノードが無ければ nodeKnown = false）
@@ -158,7 +175,7 @@ NsParams readNsParams();
 bool writeNsParams(int nodeId, double vad, double grace);
 
 /**
- * 設定・つながり・自動起動・ノイズ除去の強さをまとめて読む（外部コマンドを最大 5 回呼ぶ。1 回 10〜40ms 程度）。
+ * 設定・つながり・ミュート・自動起動・ノイズ除去の強さをまとめて読む（外部コマンドを最大 6 回呼ぶ。1 回 10〜40ms 程度）。
  * @param withAutostart 自動起動の状態も読むか（false なら autostart は Unknown のまま）
  * @return 読んだ状態（writeError は None）
  */

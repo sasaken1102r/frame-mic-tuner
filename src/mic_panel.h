@@ -48,6 +48,7 @@ enum class PanelAction {
     UpdateRetry,     ///< 更新に失敗したあとの「もう一度」（確認なしでもう一度 install を頼む）
     UpdateDismiss,   ///< 「入れました」「更新できませんでした」の表示を閉じる
     UpdateCancel,    ///< 確認の表示の「やめる」（パネルの中で確認を取り消すだけ。呼び出し側は何もしない）
+    Unmute,          ///< ミュートの帯の「ミュートを解除」（確認なしで解除する）
 };
 
 /** 押されたボタン（操作と、履歴なら何件目か）。 */
@@ -315,6 +316,10 @@ private:
      * vendor/frame-updater の状態を表示する。
      */
     void drawUpdateRow(const Pen& pen, const UiText& t, const frame_updater::UpdateStatus& update, double y);
+    /**
+     * ミュートの帯（ミュート中だけ、更新の帯の場所に出す。赤い地と枠に、マイクに斜線の絵・文・「ミュートを解除」）。
+     */
+    void drawMuteRow(const Pen& pen, const UiText& t, double y);
 
     /**
      * 2 つの選択肢を 1 本のピルに並べ、選択中の側に塗りを置く（スライド式）。

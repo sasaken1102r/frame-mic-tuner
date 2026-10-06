@@ -94,6 +94,7 @@ bool MicWorker::execute(const MicCommand& command, int nodeId) {
             if (nodeId < 0) nodeId = readNsParams().nodeId;
             return writeNsParams(nodeId, command.vad, command.grace);
         }
+        case MicCommand::Kind::Unmute: return writeUnmute();
         case MicCommand::Kind::SetPreset: break;  // run() で 2 つの書き込みを別々に扱う
     }
     return false;
@@ -195,6 +196,8 @@ void MicWorker::run() {
                 fresh.writeError = MicError::None;
             } else if (isNsParams) {
                 fresh.writeError = MicError::WriteNsParams;
+            } else if (command.kind == MicCommand::Kind::Unmute) {
+                fresh.writeError = MicError::WriteMute;
             } else {
                 fresh.writeError =
                     command.kind == MicCommand::Kind::SetAutostart ? MicError::WriteAutostart : MicError::WriteSettings;

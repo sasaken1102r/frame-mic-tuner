@@ -102,6 +102,9 @@ const UiText kJapanese = {
     "前回のインストールのオプションを読めません", "別の更新が動いています", "もう最新版です",
     "更新を始められませんでした（systemd-run）", "更新が途中で止まりました", "ファイルを書けませんでした",
     "うまくいきませんでした",
+
+    // ミュート
+    "ミュート中", "マイクがミュートされています", "ミュートを解除", "ミュートを解除できませんでした（wpctl）",
 };
 
 const UiText kEnglish = {
@@ -156,6 +159,9 @@ const UiText kEnglish = {
     "The saved install options are invalid", "Another update is running", "Already up to date",
     "Couldn't start the update (systemd-run)", "The update was interrupted", "Couldn't write files",
     "Something went wrong",
+
+    // Mute
+    "Muted", "Mic is muted", "Unmute", "Couldn't unmute (wpctl)",
 };
 
 }  // namespace

@@ -46,7 +46,7 @@ constexpr double kPipelineH = 116;
 constexpr double kVoiceY = 26;       // 声のチェックのカード
 constexpr double kVoiceH = 548;
 constexpr double kRowStep = 74;      // 履歴の 1 行
-constexpr double kUpdateRowY = 594;  // 更新の帯（全幅のカード。今の版・新しい版の確認と更新）
+constexpr double kUpdateRowY = 594;  // 更新の帯（全幅のカード。今の版・新しい版の確認と更新。ミュート中はミュートの帯）
 constexpr double kUpdateRowH = 70;
 constexpr double kFooterY = 682;     // 下の 1 行（言語・自動起動・終了）
 
@@ -303,6 +303,82 @@ void strokeRounded(const Pen& pen, double x, double y, double w, double h, doubl
 }
 
 /**
+ * 斜線の入ったマイクの絵（ミュート中の印。色だけで伝えないため）。
+ * @param cr cairo
+ * @param cx 真ん中の x
+ * @param cy 真ん中の y
+ * @param s 大きさ（px、絵の高さのめやす）
+ * @param c 色
+ * @param bg 下の色（斜線とマイクの間に隙間を空けるのに使う）
+ */
+void drawMicMutedIcon(cairo_t* cr, double cx, double cy, double s, Color c, Color bg) {
+    const double u = s / 24.0;
+    cairo_save(cr);
+    cairo_set_source_rgb(cr, c.r, c.g, c.b);
+    cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+    // 頭（縦長のカプセル）
+    const double headW = 7 * u;
+    const double headTop = cy - 10 * u;
+    const double headH = 12 * u;
+    cairo_new_sub_path(cr);
+    cairo_arc(cr, cx, headTop + headW / 2, headW / 2, M_PI, 0);
+    cairo_arc(cr, cx, headTop + headH - headW / 2, headW / 2, 0, M_PI);
+    cairo_close_path(cr);
+    cairo_fill(cr);
+    // 受け（U 字）・柄・台
+    cairo_set_line_width(cr, 2 * u);
+    cairo_new_sub_path(cr);
+    cairo_arc(cr, cx, cy - 1 * u, 6.5 * u, 0, M_PI);
+    cairo_stroke(cr);
+    cairo_move_to(cr, cx, cy + 5.5 * u);
+    cairo_line_to(cr, cx, cy + 9 * u);
+    cairo_move_to(cr, cx - 4 * u, cy + 10 * u);
+    cairo_line_to(cr, cx + 4 * u, cy + 10 * u);
+    cairo_stroke(cr);
+    // 斜線（下の色で太めに抜いてから、色で引く）
+    cairo_set_source_rgb(cr, bg.r, bg.g, bg.b);
+    cairo_set_line_width(cr, 5 * u);
+    cairo_move_to(cr, cx - 9 * u, cy - 10 * u);
+    cairo_line_to(cr, cx + 9 * u, cy + 10 * u);
+    cairo_stroke(cr);
+    cairo_set_source_rgb(cr, c.r, c.g, c.b);
+    cairo_set_line_width(cr, 2.2 * u);
+    cairo_move_to(cr, cx - 9 * u, cy - 10 * u);
+    cairo_line_to(cr, cx + 9 * u, cy + 10 * u);
+    cairo_stroke(cr);
+    cairo_restore(cr);
+}
+
+/**
+ * ピル型のボタンを描く（更新の帯・ミュートの帯のボタン。当たり判定の登録は呼び出し側）。
+ * primary はアクセントの塗り、ほかは下の行のボタンと同じ地・枠。
+ * @param pen 描画の道具
+ * @param x 左
+ * @param y 上
+ * @param w 幅
+ * @param h 高さ
+ * @param label 文言
+ * @param size 文字の大きさ
+ * @param primary アクセントの塗りにするか
+ * @param pointer 0 = ふつう、1 = 乗っている、2 = 押している
+ */
+void drawPillButton(const Pen& pen, double x, double y, double w, double h, const std::string& label, double size,
+                    bool primary, int pointer) {
+    cairo_t* cr = pen.cr;
+    if (primary) {
+        pen.color(pointer == 2 ? kAccentPressed : kAccent);
+        pen.roundedRect(x, y, w, h, h / 2);
+        cairo_fill(cr);
+    } else {
+        pen.color(pointer > 0 ? kControlHover : kControl);
+        pen.roundedRect(x, y, w, h, h / 2);
+        cairo_fill(cr);
+        strokeRounded(pen, x, y, w, h, h / 2, kBorder, 2);
+    }
+    textCentered(pen, x + w / 2, centerBaseline(y, h, size), label, size, primary ? kOnAccent : kText, true);
+}
+
+/**
  * 録った時刻を「00:41」の形にする。
  * @param t 時刻
  * @return 文字列
@@ -328,6 +404,7 @@ std::string errorText(MicError error, const UiText& text) {
         case MicError::WriteNsParams: return text.errWriteNsParams;
         case MicError::WriteEcho: return text.errWriteEcho;
         case MicError::WriteNs: return text.errWriteNs;
+        case MicError::WriteMute: return text.errWriteMute;
     }
     return "";
 }
@@ -559,6 +636,19 @@ void MicPanel::drawHeader(const Pen& pen, const UiText& t, const MicState& state
     // 左のカラムの右上のバッジ: 使用中は緑の塗り＋●＋文字、未使用は灰色の塗り＋○＋文字（色だけで伝えない）
     const double h = 40;
     const double y = 22;
+    if (state.muteKnown && state.muted) {
+        // ミュート中は使用中 / 未使用より優先して、赤い地と枠＋斜線の入ったマイクの絵＋「ミュート中」
+        const double size = 20;
+        const double w = pen.measure(t.micMuted, size, true) + 62;
+        const double x = kLeftRight - w;
+        pen.color(kMuteFill);
+        pen.roundedRect(x, y, w, h, h / 2);
+        cairo_fill(pen.cr);
+        strokeRounded(pen, x, y, w, h, h / 2, kMuteBorder, 1.5);
+        drawMicMutedIcon(pen.cr, x + 25, y + h / 2, 22, kMuteText, kMuteFill);
+        pen.text(x + 44, centerBaseline(y, h, size), t.micMuted, size, kMuteText, true);
+        return;
+    }
     if (!state.loaded || !state.linksKnown) {
         pen.text(kLeftRight, centerBaseline(y, h, 18), state.loaded ? t.chainUnknown : t.loading, 18, kTextMuted,
                  false, true);
@@ -1117,7 +1207,6 @@ void MicPanel::drawVoice(const Pen& pen, const UiText& t, const VoiceView& voice
 
 void MicPanel::drawUpdateRow(const Pen& pen, const UiText& t, const frame_updater::UpdateStatus& update, double y) {
     using frame_updater::UpdateState;
-    cairo_t* cr = pen.cr;
     const double x = kPad;
     const double w = kRight - kPad;
     const double h = kUpdateRowH;
@@ -1209,19 +1298,7 @@ void MicPanel::drawUpdateRow(const Pen& pen, const UiText& t, const frame_update
         const double bw = std::max(120.0, pen.measure(label, buttonSize, true) + 56);
         const double bx = buttonsLeft - bw;
         buttonsLeft = bx - 10;
-        const int pointer = pointerState(action);
-        if (primary) {
-            pen.color(pointer == 2 ? kAccentPressed : kAccent);
-            pen.roundedRect(bx, buttonY, bw, buttonH, buttonH / 2);
-            cairo_fill(cr);
-        } else {
-            pen.color(pointer > 0 ? kControlHover : kControl);
-            pen.roundedRect(bx, buttonY, bw, buttonH, buttonH / 2);
-            cairo_fill(cr);
-            strokeRounded(pen, bx, buttonY, bw, buttonH, buttonH / 2, kBorder, 2);
-        }
-        textCentered(pen, bx + bw / 2, centerBaseline(buttonY, buttonH, buttonSize), label, buttonSize,
-                     primary ? kOnAccent : kText, true);
+        drawPillButton(pen, bx, buttonY, bw, buttonH, label, buttonSize, primary, pointerState(action));
         addButton(action, 0, bx, buttonY, bw, buttonH);
     };
 
@@ -1260,6 +1337,28 @@ void MicPanel::drawUpdateRow(const Pen& pen, const UiText& t, const frame_update
         pen.text(textX, y + 30, message, size, color, bold);
         pen.text(textX, y + 54, hint, fitSize(pen, hint, 15, 12, textMax, false), kTextMuted);
     }
+}
+
+void MicPanel::drawMuteRow(const Pen& pen, const UiText& t, double y) {
+    // 更新の帯と同じ大きさ・同じボタンの部品で、赤い地と枠にする（色だけでなく、絵と文でも伝える）
+    const double x = kPad;
+    const double w = kRight - kPad;
+    const double h = kUpdateRowH;
+    const double buttonH = 50;
+    const double buttonY = y + (h - buttonH) / 2;
+    const double buttonSize = 19;
+    drawCard(pen, x, y, w, h, 20, kMuteFill, kMuteBorder, 2);
+
+    const double bw = std::max(120.0, pen.measure(t.unmute, buttonSize, true) + 56);
+    const double bx = x + w - (h - buttonH) / 2 - bw;
+    drawPillButton(pen, bx, buttonY, bw, buttonH, t.unmute, buttonSize, false, pointerState(PanelAction::Unmute));
+    addButton(PanelAction::Unmute, 0, bx, buttonY, bw, buttonH);
+
+    const double iconX = x + kCardPad + 14;
+    drawMicMutedIcon(pen.cr, iconX, y + h / 2, 30, kMuteText, kMuteFill);
+    const double textX = iconX + 26;
+    const double size = fitSize(pen, t.mutedBanner, 21, 14, bx - 16 - textX, true);
+    pen.text(textX, centerBaseline(y, h, size), t.mutedBanner, size, kMuteText, true);
 }
 
 void MicPanel::drawFooter(const Pen& pen, const UiText& t, const MicState& state, Language language, double y) {
@@ -1341,7 +1440,12 @@ void MicPanel::render(const Config& config, const MicState& state, const VoiceVi
     }
     drawPipeline(pen, t, state, kPipelineY);
     drawVoice(pen, t, voice, kVoiceY);
-    drawUpdateRow(pen, t, update, kUpdateRowY);
+    // ミュート中は、更新の帯の場所（両方のタブで見える全幅の帯）にミュートの帯を出す。解除されたら更新の帯に戻る
+    if (state.muteKnown && state.muted) {
+        drawMuteRow(pen, t, kUpdateRowY);
+    } else {
+        drawUpdateRow(pen, t, update, kUpdateRowY);
+    }
     drawFooter(pen, t, state, config.language, kFooterY);
 
     // 押せなくなったボタンに乗っていた印は外す
