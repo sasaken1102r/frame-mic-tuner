@@ -1664,17 +1664,21 @@ void MicPanel::drawUpdateBox(const frame_ui::Canvas& ui, const UiText& t, frame_
     }
     const double textX = box.x + 20;
     const double room = (buttons.empty() ? box.right() - 20 : left - 6) - textX;
+    // 文は 2 行まで（補足が無ければ 4 行まで）折り返し、補足は箱の高さに入るだけ（3 行まで）出す
     const double lineSize = ui.fit(line, frame_ui::kControlSize, 15, room, lineBold);
-    const std::vector<std::string> lineRows = wrapText(ui, line, lineSize, lineBold, room, 2);
+    const double rowH = lineSize + 7;
+    const double hintH = 19;
+    const std::vector<std::string> lineRows = wrapText(ui, line, lineSize, lineBold, room, hint.empty() ? 4 : 2);
+    const int hintRoom = static_cast<int>((box.h - 16 - lineRows.size() * rowH - 6) / hintH);
     const std::vector<std::string> hintRows =
-        hint.empty() ? std::vector<std::string>() : wrapText(ui, hint, 14, false, room, lineRows.size() > 1 ? 1 : 2);
-    const double blockH = lineRows.size() * (lineSize + 7) + (hintRows.empty() ? 0 : 6 + hintRows.size() * 20.0);
+        hint.empty() || hintRoom < 1 ? std::vector<std::string>() : wrapText(ui, hint, 14, false, room, std::min(3, hintRoom));
+    const double blockH = lineRows.size() * rowH + (hintRows.empty() ? 0 : 6 + hintRows.size() * hintH);
     double y = box.y + (box.h - blockH) / 2;
     for (const std::string& row : lineRows) {
         ui.text(textX, y + lineSize, row, lineSize, rgb(lineColor), lineBold);
-        y += lineSize + 7;
+        y += rowH;
     }
-    if (!hintRows.empty()) drawLines(ui, textX, y + 6 + 14, 20, hintRows, 14, kTextMuted);
+    if (!hintRows.empty()) drawLines(ui, textX, y + 6 + 14, hintH, hintRows, 14, kTextMuted);
 }
 
 void MicPanel::drawApps(const frame_ui::Canvas& ui, const UiText& t, const Config& config, const PanelModel& model) {
