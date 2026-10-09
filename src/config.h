@@ -1,10 +1,13 @@
-// 設定（~/.config/frame-mic-tuner/config.json）の読み書き。持つのは言語と、ノイズ除去の強さ。
-// エコー除去・ノイズ除去のオン・オフは WirePlumber が、自動起動の状態は systemd が持つので、ここには保存しない。
+// 設定（~/.config/frame-mic-tuner/config.json）の読み書き。持つのは言語・タブ・新しい版の確認と、
+// 音の出口ごとの Frame マイクの設定（エコー除去・ノイズ除去・強さ）。
+// 今かかっているオン・オフは WirePlumber が、自動起動の状態は systemd が持つ（ここは出口ごとに覚えておく分）。
 #pragma once
 
 #include "i18n.h"
 #include "mic_state.h"
+#include "outputs.h"
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -20,13 +23,16 @@ enum class PanelTab {
 struct Config {
     Language language = systemLanguage();  ///< 画面の文言の言語（"ja" / "en" / "sc"。既定は Frame のシステム言語）
     PanelTab tab = PanelTab::Quick;        ///< 最後に見ていたタブ（パネルを開いたときにこのタブを出す）
-    // ノイズ除去の強さ。SteamOS は PipeWire の起動のたびに既定値に戻すので、アプリが保存してかけ直す。
-    // バーを動かすまでは持たない（持たない間は何もかけず、SteamOS の値のまま）
+    // 前の版のノイズ除去の強さ（出口ごとに覚える前の、1 つだけの値）。初めて起動したときに今の出口の設定へ移す。
+    // そのあとは今の出口の強さを写しておく（前の版に戻したときも、最後の出口の強さで動くように）
     bool hasNsParams = false;
     double nsVad = kNsVadDefault;      ///< 判定の厳しさ（%）。キーは ns_vad_threshold_percent
     double nsGrace = kNsGraceDefault;  ///< 余韻（ms）。キーは ns_vad_grace_ms
     // 新しい版の自動確認（起動時と 1 日 1 回）。オフでも［確認］ボタンでは確かめられる。キーは update_check
     bool updateCheck = true;
+    // 音の出口ごとの Frame マイクの設定（キーは出口のキー。outputs.h の endpointKey）。キーは outputs
+    std::map<std::string, OutputProfile> outputs;
+    bool outputsSaved = false;  ///< ファイルに outputs があった（無ければ前の版からなので、今の設定を今の出口へ移す）
 };
 
 /** 画面の文字に使うフォント（Noto Sans CJK。読めなければ fontconfig で探す）。 */

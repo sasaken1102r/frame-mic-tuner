@@ -7,6 +7,9 @@
 #include "mic_panel.h"
 #include "mic_state.h"
 #include "mic_worker.h"
+#include "output_sync.h"
+#include "outputs.h"
+#include "self_test.h"
 #include "theme.h"
 #include "voice_check.h"
 #include "vr_overlay.h"
@@ -446,6 +449,61 @@ void logState(const MicState& state) {
 }
 
 /**
+ * 出口ごとの設定を短い日本語にする（--print 用）。
+ * @param p 設定
+ * @return 例:「エコー除去オン・ノイズ除去オフ・23%/500ms（スピーカー、最後に使った日 2026-10-10）」
+ */
+std::string describeProfile(const OutputProfile& p) {
+    char text[200];
+    std::snprintf(text, sizeof(text), "エコー除去%s・ノイズ除去%s・%.0f%%/%.0fms（%s、最後に使った日 %s）",
+                  p.echo ? "オン" : "オフ", p.ns ? "オン" : "オフ", p.nsVad, p.nsGrace,
+                  p.kind == OutputKind::Speaker ? "スピーカー" : "イヤホン", p.lastUsed.empty() ? "不明" : p.lastUsed.c_str());
+    return text;
+}
+
+/**
+ * 音の出口・マイクの一覧と、出口ごとに覚えている設定を書き出す（--print 用。読むだけで、設定ファイルは書かない）。
+ * @param state 状態（devices）
+ * @param config 設定ファイルの中身
+ */
+void printOutputs(const MicState& state, const Config& config) {
+    const AudioDevices& d = state.devices;
+    if (!d.known) std::printf("音の出口とマイク: 一覧を読めません（pw-dump）\n");
+    std::printf("既定の出力（default.audio.sink）: %s → キー %s\n", d.defaultSinkName.empty() ? "（なし）" : d.defaultSinkName.c_str(),
+                d.defaultOutputKey.empty() ? "（なし）" : d.defaultOutputKey.c_str());
+    std::printf("既定の入力（default.audio.source）: %s → キー %s%s\n",
+                d.defaultSourceName.empty() ? "（なし）" : d.defaultSourceName.c_str(),
+                d.defaultInputKey.empty() ? "（なし）" : d.defaultInputKey.c_str(),
+                d.defaultInputKey.empty() ? "" : (isBuiltinMic(d.defaultInputKey) ? "（Frame 内蔵マイク）" : "（外付けのマイク）"));
+    std::printf("つながっている音の出口:\n");
+    for (const AudioEndpoint& e : d.outputs) {
+        std::printf("  %s %s  キー %s  既定にするノード %s（id %d）%s\n", e.key == d.defaultOutputKey ? "*" : " ",
+                    e.name.c_str(), e.key.c_str(), e.nodeName.c_str(), e.nodeId,
+                    isBuiltinSpeaker(e.key) ? "  Frame のスピーカー" : "");
+    }
+    std::printf("つながっているマイク:\n");
+    for (const AudioEndpoint& e : d.inputs) {
+        std::printf("  %s %s  キー %s  既定にするノード %s（id %d）%s\n", e.key == d.defaultInputKey ? "*" : " ",
+                    e.name.c_str(), e.key.c_str(), e.nodeName.c_str(), e.nodeId, isBuiltinMic(e.key) ? "  Frame 内蔵" : "");
+    }
+    std::printf("出口ごとに覚えている設定（%s）:\n", config.outputsSaved ? "config.json の outputs" : "まだ無い。次の起動で今の設定を今の出口へ移す");
+    for (const auto& entry : config.outputs) {
+        std::printf("  %s %s（%s）: %s%s\n", entry.first == d.defaultOutputKey ? "*" : " ", entry.second.name.c_str(),
+                    entry.first.c_str(), describeProfile(entry.second).c_str(),
+                    d.findOutput(entry.first) != nullptr ? "" : "  いまはつながっていない");
+    }
+    if (!d.defaultOutputKey.empty() && config.outputs.count(d.defaultOutputKey) == 0) {
+        if (config.outputsSaved) {
+            const OutputProfile first = firstProfile(d.defaultOutputKey, "");
+            std::printf("  今の出口はまだ覚えていません（常駐がこの出口を見つけると %s から始めます）\n",
+                        describeProfile(first).c_str());
+        } else {
+            std::printf("  今の出口はまだ覚えていません（常駐が起動すると、今かかっている設定をこの出口の設定として移します）\n");
+        }
+    }
+}
+
+/**
  * 状態を端末向けに書き出す（--print 用）。
  * @param state 状態
  */
@@ -490,8 +548,11 @@ int runPrint(const Options& options) {
             case MicCommand::Kind::SetNs: ok = writeSetting(kNoiseSuppressionKey, command.value); break;
             case MicCommand::Kind::SetAutostart: ok = writeAutostart(command.value); break;
             case MicCommand::Kind::SetNsParams: break;  // 下でまとめて扱う
-            case MicCommand::Kind::SetPreset: break;    // --print からは使わない
-            case MicCommand::Kind::Unmute: break;       // --print からは使わない
+            // --print からは使わない（常駐のパネルだけが使う）
+            case MicCommand::Kind::ApplySettings:
+            case MicCommand::Kind::SetMute:
+            case MicCommand::Kind::SetDefaultOutput:
+            case MicCommand::Kind::SetDefaultInput: break;
         }
         if (!ok) {
             writeError = command.kind == MicCommand::Kind::SetAutostart ? MicError::WriteAutostart
@@ -506,8 +567,11 @@ int runPrint(const Options& options) {
         if (!now.nodeKnown || !writeNsParams(now.nodeId, vad, grace)) writeError = MicError::WriteNsParams;
     }
     MicState state = readMicState();
+    state.devices = readAudioDevices();
     state.writeError = writeError;
     printState(state);
+    // 設定ファイルは読むだけ（--print は出口の設定を移したり、かけたりしない）
+    printOutputs(state, loadConfigOrDefault(options.configPath));
     return (state.readError != MicError::None || writeError != MicError::None) ? 1 : 0;
 }
 
@@ -1021,6 +1085,9 @@ int runSelfTest() {
                !sameMicState(state, other) && !sameMicState(other, unmuted) && sameMicState(other, other));
     }
 
+    // 音の出口: 一覧の読み取り（Frame で取った pw-dump・pw-metadata）・キー・出口ごとの設定のかけ方・設定ファイル
+    outputSelfTests(expect);
+
     std::printf("%d 件中 %d 件が不合格\n", total, failures);
     return failures == 0 ? 0 : 1;
 }
@@ -1126,27 +1193,24 @@ void handleAction(PanelHit hit, Config& config, const std::string& configPath, M
     switch (action) {
         case PanelAction::Earphone:  // プリセットは呼び出し側で扱う（書き込みが終わるまでカードの見た目を保つため）
         case PanelAction::Speaker:
-        case PanelAction::TabQuick:  // タブも呼び出し側で扱う（ドラッグを終わらせてから切り替えるため）
-        case PanelAction::TabFine: return;
-        case PanelAction::EchoOn:
+        case PanelAction::EchoOn:    // エコー除去・ノイズ除去も呼び出し側で扱う（出口ごとに覚えるため）
         case PanelAction::EchoOff:
-            std::fprintf(stderr, "[操作] エコー除去 %s\n", action == PanelAction::EchoOn ? "オン" : "オフ");
-            worker.request({MicCommand::Kind::SetEcho, action == PanelAction::EchoOn});
-            return;
         case PanelAction::NsOn:
         case PanelAction::NsOff:
-            std::fprintf(stderr, "[操作] ノイズ除去 %s\n", action == PanelAction::NsOn ? "オン" : "オフ");
-            worker.request({MicCommand::Kind::SetNs, action == PanelAction::NsOn});
-            return;
+        case PanelAction::TabQuick:  // タブも呼び出し側で扱う（ドラッグを終わらせてから切り替えるため）
+        case PanelAction::TabFine: return;
         case PanelAction::AutostartOn:
         case PanelAction::AutostartOff:
             std::fprintf(stderr, "[操作] SteamVR と一緒に起動 %s\n", action == PanelAction::AutostartOn ? "オン" : "オフ");
             worker.request({MicCommand::Kind::SetAutostart, action == PanelAction::AutostartOn});
             return;
-        case PanelAction::Unmute:
+        case PanelAction::Unmute: {
             std::fprintf(stderr, "[操作] ミュートを解除\n");
-            worker.request({MicCommand::Kind::Unmute});
+            MicCommand command {MicCommand::Kind::SetMute};
+            command.value = false;
+            worker.request(command);
             return;
+        }
         case PanelAction::LanguageJa:
         case PanelAction::LanguageEn:
         case PanelAction::LanguageSc: {
@@ -1234,8 +1298,18 @@ int runOverlay(const Options& options) {
     MicPanel panel(fonts);
     MicWorker worker;
     worker.start();
-    // 保存したノイズ除去の強さがあれば、ノードが見つかりしだいかける（SteamOS は PipeWire の起動のたびに既定値に戻す）
+    // 保存したノイズ除去の強さがあれば、ノードが見つかりしだいかける（SteamOS は PipeWire の起動のたびに既定値に戻す）。
+    // 出口ごとの設定が読めたら、そちら（OutputSync が今の出口の設定をかける）が優先する
     if (config.hasNsParams) worker.setDesiredNsParams(config.nsVad, config.nsGrace);
+    // 音の出口ごとの設定: 起動したとき・出口が変わったときに、その出口の覚えた設定をかける（パネルを閉じていても）
+    OutputSync outputSync([&worker](const MicCommand& command) { return worker.request(command); });
+    /**
+     * 設定ファイルに保存する（失敗はログだけ）。
+     */
+    const auto saveNow = [&]() {
+        std::string error;
+        if (!saveConfig(options.configPath, config, error)) std::fprintf(stderr, "[設定] 保存に失敗: %s\n", error.c_str());
+    };
     VoiceCheck voice;
     VrOverlay vr;
 
@@ -1299,6 +1373,7 @@ int runOverlay(const Options& options) {
     std::fprintf(stderr, "[VR] SteamVR につながりました\n");
     MicState state;
     uint64_t drawnVersion = worker.snapshot(state);
+    if (outputSync.update(state, config, todayText())) saveNow();  // ワーカーが SteamVR を待つ間に読み終えていたとき
     {
         std::vector<uint8_t> thumbnail;
         renderThumbnail(fonts, kThumbnailSize, thumbnail);
@@ -1322,12 +1397,45 @@ int runOverlay(const Options& options) {
      * ワーカーが 2 つ書いてから 1 回だけ読み直す。ノイズ除去のバーの値は変えない。
      * @param action Earphone か Speaker
      */
+    /**
+     * 今の出口の設定を書き換えて保存する（パネルの操作。自動の切り替えの知らせは消す）。
+     * @param change 書き換え
+     */
+    const auto changeActiveProfile = [&](const std::function<void(OutputProfile&)>& change) {
+        outputSync.dismissNotice();
+        if (outputSync.activeKey().empty()) return;
+        bool created = false;
+        OutputProfile& profile = ensureProfile(config, outputSync.activeKey(), state.devices, created);
+        change(profile);
+        config.hasNsParams = true;  // 前の版のキーにも今の出口の強さを写す
+        config.nsVad = profile.nsVad;
+        config.nsGrace = profile.nsGrace;
+        saveNow();
+    };
     const auto applyPreset = [&](PanelAction action) {
         const bool speaker = action == PanelAction::Speaker;
         std::fprintf(stderr, "[操作] %s\n", speaker ? "スピーカー（エコー除去オン・ノイズ除去オフ）"
                                                      : "イヤホン（エコー除去オフ・ノイズ除去オフ）");
-        presetTicket = worker.request({MicCommand::Kind::SetPreset, speaker});
+        presetTicket = worker.request(MicCommand::applySettings(speaker, false, false, 0, 0, false));
+        outputSync.noteWrite(presetTicket);
         panel.holdPreset(action, nowSeconds() + 8.0);  // 書き込みが詰まっても、8 秒で実際の値の表示に戻す
+        changeActiveProfile([speaker](OutputProfile& p) {
+            p.echo = speaker;
+            p.ns = false;
+        });
+    };
+    /**
+     * エコー除去・ノイズ除去を 1 つ切り替える（今の出口の設定として覚える）。
+     * @param action EchoOn / EchoOff / NsOn / NsOff
+     */
+    const auto applyToggle = [&](PanelAction action) {
+        const bool echo = action == PanelAction::EchoOn || action == PanelAction::EchoOff;
+        const bool on = action == PanelAction::EchoOn || action == PanelAction::NsOn;
+        std::fprintf(stderr, "[操作] %s %s\n", echo ? "エコー除去" : "ノイズ除去", on ? "オン" : "オフ");
+        MicCommand command {echo ? MicCommand::Kind::SetEcho : MicCommand::Kind::SetNs};
+        command.value = on;
+        outputSync.noteWrite(worker.request(command));
+        changeActiveProfile([echo, on](OutputProfile& p) { (echo ? p.echo : p.ns) = on; });
     };
     /**
      * ノイズ除去の強さをワーカーに頼み（前に送った値と同じなら頼まない）、読み直しが追いつくまで表示を保つ。
@@ -1342,22 +1450,18 @@ int runOverlay(const Options& options) {
             MicCommand command {MicCommand::Kind::SetNsParams};
             command.vad = vad;
             command.grace = grace;
-            worker.request(command);
+            outputSync.noteWrite(worker.request(command));
             sentVad = vad;
             sentGrace = grace;
             lastNsSendAt = nowSeconds();
         }
         panel.holdNsValues(vad, grace, nowSeconds() + 1.5);
         if (!save) return;
-        config.hasNsParams = true;
-        config.nsVad = vad;
-        config.nsGrace = grace;
-        std::string error;
-        if (saveConfig(options.configPath, config, error)) {
-            std::fprintf(stderr, "[ノイズ除去] 判定の厳しさ %.0f%%・余韻 %.0fms を保存しました\n", vad, grace);
-        } else {
-            std::fprintf(stderr, "[設定] 保存に失敗: %s\n", error.c_str());
-        }
+        changeActiveProfile([vad, grace](OutputProfile& p) {
+            p.nsVad = vad;
+            p.nsGrace = grace;
+        });
+        std::fprintf(stderr, "[ノイズ除去] 判定の厳しさ %.0f%%・余韻 %.0fms を保存しました\n", vad, grace);
     };
     /**
      * ノイズ除去の強さのボタン・バーの押下を扱う。
@@ -1424,7 +1528,6 @@ int runOverlay(const Options& options) {
         std::vector<uint8_t> thumbnail;
         renderThumbnail(fonts, kThumbnailSize, thumbnail);
         vr.submitThumbnail(thumbnail.data(), kThumbnailSize);
-        drawnVersion = worker.snapshot(state);
         drawnUpdateRevision = updater.revision();
         panel.render(config, state, voiceView, updater.status());
         vr.submitPanel(panel.toRgba().data());
@@ -1458,7 +1561,15 @@ int runOverlay(const Options& options) {
         updater.tick(config.updateCheck);
         if (updater.revision() != drawnUpdateRevision) dirty = true;
 
-        // パネルが見えている間だけ、ワーカーが 1 秒ごとに読み直す（見えていない間は何も実行しない）
+        // ワーカーの状態が変わったら写しを取り、出口の設定を合わせる（閉じている間も: 出口が変わったら、その出口の設定をかける）
+        if (worker.version() != drawnVersion) {
+            drawnVersion = worker.snapshot(state);
+            logState(state);
+            if (outputSync.update(state, config, todayText())) saveNow();
+            dirty = true;
+        }
+
+        // パネルが見えている間だけ、ワーカーが 1 秒ごとに読み直す（見えていない間は既定の出力・入力を 2 秒おきに見るだけ）
         const bool visible = vr.panelVisible();
         worker.setActive(visible);
         // パネルが閉じたら、録音はすぐ止める（見えないところで録らない）。再生も止めて、PipeWire のストリームを片付ける
@@ -1486,6 +1597,9 @@ int runOverlay(const Options& options) {
                         userQuit = true;
                     } else if (hit.action == PanelAction::Earphone || hit.action == PanelAction::Speaker) {
                         applyPreset(hit.action);
+                    } else if (hit.action == PanelAction::EchoOn || hit.action == PanelAction::EchoOff ||
+                               hit.action == PanelAction::NsOn || hit.action == PanelAction::NsOff) {
+                        applyToggle(hit.action);
                     } else if (hit.action == PanelAction::TabQuick || hit.action == PanelAction::TabFine) {
                         switchTab(hit.action == PanelAction::TabQuick ? PanelTab::Quick : PanelTab::Fine);
                     } else if (hit.action == PanelAction::UpdateCheckNow || hit.action == PanelAction::UpdateInstall ||
@@ -1515,15 +1629,11 @@ int runOverlay(const Options& options) {
             sendNsParams(vad, grace, false);
         }
         dirty |= panel.tick(nowSeconds());  // 「もう一度押すと終了」の期限切れ
-        if (worker.version() != drawnVersion) dirty = true;
         // 録音中・再生中はメーターと再生位置を動かすため、1 秒に 15 回描き直す
         if (voice.busy() && nowSeconds() - lastVoiceFrame >= kVoiceFrameSec) dirty = true;
 
         // パネルは見えているときだけ、変化があったときだけ描く
         if (visible && (dirty || !wasVisible)) {
-            const uint64_t version = worker.snapshot(state);
-            if (version != drawnVersion) logState(state);
-            drawnVersion = version;
             voiceView = voice.view();
             lastVoiceFrame = nowSeconds();
             drawnUpdateRevision = updater.revision();

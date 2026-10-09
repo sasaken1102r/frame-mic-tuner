@@ -300,8 +300,8 @@ bool sameMicState(const MicState& a, const MicState& b) {
                         pa.vad == pb.vad && pa.graceKnown == pb.graceKnown && pa.grace == pb.grace;
     return a.loaded == b.loaded && a.echoKnown == b.echoKnown && a.echo == b.echo && a.nsKnown == b.nsKnown &&
            a.ns == b.ns && a.linksKnown == b.linksKnown && a.inUse == b.inUse && a.muteKnown == b.muteKnown &&
-           a.muted == b.muted && a.autostart == b.autostart && sameNs && a.readError == b.readError &&
-           a.writeError == b.writeError;
+           a.muted == b.muted && a.autostart == b.autostart && sameNs && a.nsApplied == b.nsApplied &&
+           a.devices == b.devices && a.readError == b.readError && a.writeError == b.writeError;
 }
 
 double clampNsVad(double value) {
@@ -388,15 +388,15 @@ bool writeSetting(const char* key, bool value) {
     return true;
 }
 
-bool writeUnmute() {
-    const std::vector<std::string> argv = {"wpctl", "set-mute", kDefaultSource, "0"};
+bool writeMute(bool muted) {
+    const std::vector<std::string> argv = {"wpctl", "set-mute", kDefaultSource, muted ? "1" : "0"};
     const CommandResult result = runCommand(argv);
     std::fprintf(stderr, "[マイク] %s\n", describeCommand(argv, result).c_str());
     if (!result.ok()) return false;
-    // 書いたあとに読み返して、ミュートが外れたことを確かめる
-    bool muted = true;
-    if (!readMute(muted) || muted) {
-        std::fprintf(stderr, "[マイク] ミュートが外れたことを確かめられません\n");
+    // 書いたあとに読み返して、そうなったことを確かめる
+    bool now = !muted;
+    if (!readMute(now) || now != muted) {
+        std::fprintf(stderr, "[マイク] %sことを確かめられません\n", muted ? "ミュートした" : "ミュートが外れた");
         return false;
     }
     return true;

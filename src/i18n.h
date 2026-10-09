@@ -143,6 +143,9 @@ struct UiText {
     const char* mutedBanner;    ///< ミュートの帯の文
     const char* unmute;         ///< 「ミュートを解除」ボタン
     const char* errWriteMute;   ///< ミュートを解除できない（wpctl）
+    const char* errWriteMuteOn; ///< ミュートできない（wpctl）
+    const char* errWriteOutput; ///< 音の出口を切り替えられない（wpctl set-default）
+    const char* errWriteInput;  ///< 使うマイクを切り替えられない（wpctl set-default）
 };
 
 /**

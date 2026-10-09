@@ -2,6 +2,8 @@
 // 外部コマンドは固定の引数だけで呼ぶ。PipeWire・WirePlumber の再起動はしない。
 #pragma once
 
+#include "outputs.h"
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -72,7 +74,10 @@ enum class MicError {
     WriteNsParams,   ///< ノイズ除去の強さを変えられない（pw-cli）
     WriteEcho,       ///< プリセットのうち、エコー除去の切り替えに失敗（wpctl）
     WriteNs,         ///< プリセットのうち、ノイズ除去の切り替えに失敗（wpctl）
-    WriteMute,       ///< ミュートを解除できない（wpctl set-mute）
+    WriteMute,       ///< ミュートを解除できない（wpctl set-mute ... 0）
+    WriteMuteOn,     ///< ミュートできない（wpctl set-mute ... 1）
+    WriteOutput,     ///< 音の出口を切り替えられない（wpctl set-default）
+    WriteInput,      ///< 使うマイクを切り替えられない（wpctl set-default）
 };
 
 /** ノイズ除去の段の今の値（pw-dump ns_capture から読む）。 */
@@ -100,8 +105,11 @@ struct MicState {
     std::vector<std::string> users;  ///< マイクから音を取っているノード（--print 用）
     Autostart autostart = Autostart::Unknown;
     NsParams nsParams;          ///< ノイズ除去の強さ
+    bool nsApplied = true;      ///< ノイズ除去の強さの「かけたい値」を今のノードにかけ終えている（かけたい値が無いときも true）
+    AudioDevices devices;       ///< 音の出口とマイクの一覧と、今の既定
     MicError readError = MicError::None;   ///< 直近の読み取りの失敗
     MicError writeError = MicError::None;  ///< 直近の書き込みの失敗（次に成功するまで残す）
+    uint64_t writesDone = 0;    ///< この状態を覚えたときに終わっていた書き込みの数（受付番号と比べる。描き直しの判定には使わない）
     std::string rawLinks;       ///< pw-link -l の出力のうちマイクに関わる行（--print 用）
 };
 
@@ -146,10 +154,11 @@ Autostart parseAutostart(const std::string& text);
 bool parseMute(const std::string& text, bool& muted);
 
 /**
- * 既定のマイクのミュートを解除する（wpctl set-mute @DEFAULT_AUDIO_SOURCE@ 0）。解除できたかは読み返して確かめる。
- * @return 解除できたら true
+ * 既定のマイクをミュートする・解除する（wpctl set-mute @DEFAULT_AUDIO_SOURCE@ 1|0）。なったかは読み返して確かめる。
+ * @param muted ミュートするなら true、解除するなら false
+ * @return そうなったら true
  */
-bool writeUnmute();
+bool writeMute(bool muted);
 
 /**
  * 「pw-dump ns_capture」の出力（JSON）から、ノードの id と判定の厳しさ・余韻を読む。

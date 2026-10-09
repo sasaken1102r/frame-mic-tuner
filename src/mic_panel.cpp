@@ -405,6 +405,9 @@ std::string errorText(MicError error, const UiText& text) {
         case MicError::WriteEcho: return text.errWriteEcho;
         case MicError::WriteNs: return text.errWriteNs;
         case MicError::WriteMute: return text.errWriteMute;
+        case MicError::WriteMuteOn: return text.errWriteMuteOn;
+        case MicError::WriteOutput: return text.errWriteOutput;
+        case MicError::WriteInput: return text.errWriteInput;
     }
     return "";
 }

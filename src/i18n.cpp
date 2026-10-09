@@ -112,6 +112,8 @@ const UiText kJapanese = {
 
     // ミュート
     "ミュート中", "マイクがミュートされています", "ミュートを解除", "ミュートを解除できませんでした（wpctl）",
+    "ミュートできませんでした（wpctl）", "音の出口を切り替えられませんでした（wpctl）",
+    "マイクを切り替えられませんでした（wpctl）",
 };
 
 const UiText kEnglish = {
@@ -169,6 +171,7 @@ const UiText kEnglish = {
 
     // Mute
     "Muted", "Mic is muted", "Unmute", "Couldn't unmute (wpctl)",
+    "Couldn't mute (wpctl)", "Couldn't switch the output (wpctl)", "Couldn't switch the mic (wpctl)",
 };
 
 const UiText kSimplifiedChinese = {
@@ -224,6 +227,7 @@ const UiText kSimplifiedChinese = {
 
     // 静音
     "静音中", "麦克风已静音", "取消静音", "无法取消静音（wpctl）",
+    "无法静音（wpctl）", "无法切换声音输出（wpctl）", "无法切换麦克风（wpctl）",
 };
 
 }  // namespace
