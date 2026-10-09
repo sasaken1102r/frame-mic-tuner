@@ -2,3 +2,4 @@
 *.png binary
 vendor/frame-updater/** text eol=lf
 vendor/frame-ui/** text eol=lf
+vendor/frame-apps/** text eol=lf

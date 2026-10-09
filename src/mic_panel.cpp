@@ -6,6 +6,8 @@
 #include "outputs.h"
 #include "theme.h"
 
+#include "frame_apps_cairo.h"  // vendor/frame-apps/cpp
+
 #include <cairo.h>
 
 #include <algorithm>
@@ -40,6 +42,12 @@ constexpr Rect kVoiceCard {620, 92, 552, 568};
 // ---- アプリと更新 ----
 constexpr Rect kAppCard {28, 92, 560, 568};
 constexpr Rect kUpdateBox {50, 244, 516, 112};
+constexpr Rect kRelatedCard {604, 92, 568, 568};
+constexpr Rect kAppsModal {56, 56, 1088, 676};
+constexpr Rect kAppsList {84, 148, 1032, 392};
+constexpr Rect kConfirmCard {260, 150, 680, 476};
+constexpr double kAppRowH = 84;    ///< 一覧のアプリの行の高さ
+constexpr double kAppRowGap = 14;  ///< 一覧のアプリの行の間
 // ---- 一番下の行（frame-ui の drawFooter。部品の行は y 676〜732、注意書きはその下） ----
 constexpr Rect kFooterRect {28, 674, 1144, 88};
 // ---- 重ねた画面 ----
@@ -721,8 +729,37 @@ void MicPanel::applyLocal(const PanelHit& hit) {
             if (viewKey_ == hit.key) viewKey_.clear();
             break;
         case PanelAction::MicUse: overlay_ = PanelOverlay::None; break;
+        case PanelAction::AppsOpenList:
+            overlay_ = PanelOverlay::AppsList;
+            listScroll_ = 0;
+            launchResult_ = frame_apps::LaunchResult::Started;
+            break;
+        case PanelAction::AppInstall:
+        case PanelAction::AppsOpenMenu:
+            // まず確認（実行するコマンドを見せる）。開くのは確認の「Konsole で開く」
+            confirmBack_ = overlay_ == PanelOverlay::AppsList ? PanelOverlay::AppsList : PanelOverlay::None;
+            confirmKey_ = hit.action == PanelAction::AppInstall ? hit.key : std::string();
+            overlay_ = PanelOverlay::AppsConfirm;
+            launchResult_ = frame_apps::LaunchResult::Started;
+            break;
+        case PanelAction::AppsConfirmCancel:
+            overlay_ = confirmBack_;
+            launchResult_ = frame_apps::LaunchResult::Started;
+            break;
         default: break;
     }
+}
+
+void MicPanel::setLaunchResult(frame_apps::LaunchResult result) {
+    launchResult_ = result;
+    if (result == frame_apps::LaunchResult::Started && overlay_ == PanelOverlay::AppsConfirm) overlay_ = confirmBack_;
+}
+
+void MicPanel::openConfirmForPreview(const std::string& key, bool fromList) {
+    view_ = PanelView::Apps;
+    confirmKey_ = key;
+    confirmBack_ = fromList ? PanelOverlay::AppsList : PanelOverlay::None;
+    overlay_ = PanelOverlay::AppsConfirm;
 }
 
 bool MicPanel::pointerMove(double x, double y) {
@@ -832,7 +869,7 @@ bool MicPanel::pointerLeave() {
 }
 
 bool MicPanel::scroll(double dy) {
-    if (dy == 0.0 || overlay_ == PanelOverlay::None || view_ != PanelView::Settings) return false;
+    if (dy == 0.0 || overlay_ == PanelOverlay::None || overlay_ == PanelOverlay::AppsConfirm) return false;
     const double next = std::clamp(listScroll_ - dy * kScrollPxPerUnit, 0.0, listMaxScroll_);
     if (next == listScroll_) return false;
     listScroll_ = next;
@@ -864,6 +901,7 @@ void MicPanel::resetView() {
     listPress_ = {};
     updateArmed_ = false;
     quitArmed_ = false;
+    launchResult_ = frame_apps::LaunchResult::Started;
 }
 
 void MicPanel::holdPreset(PanelAction action, double until) {
@@ -993,9 +1031,12 @@ void MicPanel::drawHeader(const frame_ui::Canvas& ui, const UiText& t, const Pan
     const Rect appsHit = frame_ui::drawButton(ui, kAppsRect, "", frame_ui::ButtonKind::Normal);
     {
         using frame_updater::UpdateState;
+        // ピンクの点: 新しい版がある（入れ終わり・失敗も）か、このアプリで使うアプリが入っていない
         const UpdateState s = model.update.state;
+        bool relatedMissing = false;
+        for (const frame_apps::Entry& e : model.apps) relatedMissing |= e.related && e.state == frame_apps::AppState::Missing;
         const bool attention = !apps && (s == UpdateState::Available || s == UpdateState::Installed ||
-                                         s == UpdateState::InstallFailed);
+                                         s == UpdateState::InstallFailed || relatedMissing);
         const std::string text = apps ? t.backToSettings : t.appsButton;
         const double iconW = apps ? 18 : 20;
         const double dotW = attention ? 10 + 8 : 0;
@@ -1671,6 +1712,221 @@ void MicPanel::drawApps(const frame_ui::Canvas& ui, const UiText& t, const Confi
     fillRounded(cr, {x, 508, right - x, 1}, 0, kDivider);
     ui.text(x, 526 + 15, t.helpTitle, 14, rgb(kTextMuted));
     ui.text(x, 548 + 15, "github.com/sasaken1102r/frame-mic-tuner", 14, rgb(kTextSoft));
+
+    drawRelatedApps(ui, t, config, model);
+}
+
+void MicPanel::drawAppRow(const frame_ui::Canvas& ui, const UiText& t, Language language, const frame_apps::Entry& entry,
+                          Rect row, bool inList) {
+    using frame_apps::AppState;
+    cairo_t* cr = ui.cr;
+    fillRounded(cr, row, 16, kInset);
+    const double cy = row.y + row.h / 2;
+    // 左: アイコン（取ってきたもの → 同梱のもの。どちらも無ければ札の文字）
+    const double tile = 52;
+    const double tx = row.x + 16;
+    if (!frame_apps::drawIcon(cr, entry, tx, cy - tile / 2, tile)) {
+        fillRounded(cr, {tx, cy - tile / 2, tile, tile}, 13, kIconBox);
+        const double monoSize = ui.fit(entry.app.mono, 16, 11, tile - 8, true);
+        const double w = ui.measure(entry.app.mono, monoSize, true);
+        ui.text(tx + (tile - w) / 2, frame_ui::centerBaseline(cy - tile / 2, tile, monoSize), entry.app.mono, monoSize,
+                rgb(kAccent), true);
+    }
+    // 右: 「入れる」か状態の札
+    double rightEdge = row.right() - 16;
+    if (entry.state == AppState::Missing && !entry.busy) {
+        const double w = std::max(110.0, ui.measure(t.appsInstall, frame_ui::kControlSize, true) + 40);
+        const Rect button {rightEdge - w, cy - frame_ui::kControlH / 2, w, frame_ui::kControlH};
+        const Rect hit = frame_ui::drawButton(ui, button, t.appsInstall, frame_ui::ButtonKind::Primary);
+        addButton({PanelAction::AppInstall, 0, entry.app.key}, inList ? intersect(hit, listRect_) : hit, inList);
+        rightEdge = button.x - 16;
+    } else if (entry.state != AppState::Unknown || entry.busy) {
+        const char* label = entry.busy ? t.appsChipBusy : (entry.state == AppState::Running ? t.appsChipRunning : t.appsChipInstalled);
+        const bool ok = !entry.busy && entry.state == AppState::Running;
+        const double size = entry.busy ? 15 : 16;
+        const double dot = ok ? 12 + 8 : 0;
+        const double w = 18 + dot + ui.measure(label, size, true) + 18;
+        const Rect chip {rightEdge - w, cy - 22, w, 44};
+        fillRounded(cr, chip, 22, ok ? kSuccessTint : kIdleFill);
+        if (ok) fillCircle(cr, chip.x + 18 + 6, cy, 6, kSuccess);
+        ui.text(chip.x + 18 + dot, frame_ui::centerBaseline(chip.y, chip.h, size), label, size,
+                rgb(ok ? kSuccess : kIdleText), true);
+        rightEdge = chip.x - 16;
+    }
+    // 真ん中: 名前（一覧では「このアプリで使う」の札も）と、説明か理由（簡体字中国語の説明は英語）
+    const double textX = tx + tile + 16;
+    const double textW = std::max(40.0, rightEdge - textX);
+    const double nameSize = 19;
+    std::string tag;
+    double tagW = 0;
+    if (inList && entry.related) {
+        tag = t.appsRelatedTag;
+        tagW = ui.measure(tag, 13, true) + 20;
+    }
+    const double nameW = ui.measure(entry.app.name, nameSize, true);
+    const bool tagFits = !tag.empty() && nameW + 10 + tagW <= textW;
+    const std::string name = ui.ellipsize(entry.app.name, nameSize, tagFits ? textW - 10 - tagW : textW, true);
+    const double drawnW = ui.text(textX, cy - 4, name, nameSize, rgb(kText), true);
+    if (tagFits) {
+        const Rect tagRect {textX + drawnW + 10, cy - 4 - 17, tagW, 24};
+        fillRounded(cr, tagRect, 12, kAccentTint);
+        ui.text(tagRect.x + 10, frame_ui::centerBaseline(tagRect.y, tagRect.h, 13), tag, 13, rgb(kAccentText), true);
+    }
+    const frame_apps::Lang appsLang = language == Language::Ja ? frame_apps::Lang::Ja : frame_apps::Lang::En;
+    std::string sub = entry.app.desc(appsLang);
+    if (!inList && entry.related) sub = entry.app.name == "frame-aux-shortcuts" ? std::string(t.appsReasonAux) : entry.reason(appsLang);
+    const double subSize = ui.fit(sub, 14, 11, textW);
+    ui.text(textX, cy + 20, ui.ellipsize(sub, subSize, textW), subSize, rgb(kTextMuted));
+}
+
+void MicPanel::drawRelatedApps(const frame_ui::Canvas& ui, const UiText& t, const Config& config, const PanelModel& model) {
+    cairo_t* cr = ui.cr;
+    frame_ui::drawCard(ui, kRelatedCard);
+    const double x = kRelatedCard.x + frame_ui::kCardPadX;
+    const double right = kRelatedCard.right() - frame_ui::kCardPadX;
+    const double w = right - x;
+    ui.text(x, frame_ui::centerBaseline(110, 32, frame_ui::kCardTitleSize), t.appsRelatedTitle,
+            ui.fit(t.appsRelatedTitle, frame_ui::kCardTitleSize, 16, w, true), rgb(kText), true);
+    const double hintSize = ui.fit(t.appsRelatedHint, 14, 11, w);
+    ui.text(x, 142 + 15, ui.ellipsize(t.appsRelatedHint, hintSize, w), hintSize, rgb(kTextMuted));
+
+    // このアプリで使うものだけ（理由付き）
+    double y = 178;
+    for (const frame_apps::Entry& entry : model.apps) {
+        if (!entry.related || y + 96 > 560) continue;
+        drawAppRow(ui, t, config.language, entry, {x, y, w, 96}, false);
+        y += 96 + 16;
+    }
+
+    // 「ささけんの Frame アプリ　N 個のうち M 個が入っていません ›」（押すと一覧）
+    const Rect open {x, y, w, 88};
+    const int l = look(open);
+    fillRounded(cr, open, 16, l == 2 ? kControlDown : (l == 1 ? kControlHover : kControl));
+    strokeRounded(cr, open, 16, kBorder, 2);
+    double iconX = open.x + 18;
+    int shown = 0;
+    for (const frame_apps::Entry& entry : model.apps) {
+        if (shown == 4) break;
+        // 重ねたアイコン（下のボタンの色の縁で区切る）
+        fillRounded(cr, {iconX - 2, open.y + 26 - 2, 40, 40}, 11, kControl);
+        if (!frame_apps::drawIcon(cr, entry, iconX, open.y + 26, 36)) {
+            fillRounded(cr, {iconX, open.y + 26, 36, 36}, 9, kIconBox);
+        }
+        iconX += 24;
+        ++shown;
+    }
+    const double textX = open.x + 18 + (shown > 0 ? 24 * (shown - 1) + 36 : 0) + 16;
+    int missing = 0;
+    for (const frame_apps::Entry& entry : model.apps) missing += entry.state == frame_apps::AppState::Missing ? 1 : 0;
+    char count[200];
+    if (missing > 0) {
+        std::snprintf(count, sizeof(count), t.appsAllCountFormat, static_cast<int>(model.apps.size()), missing);
+    } else {
+        std::snprintf(count, sizeof(count), t.appsAllInstalledFormat, static_cast<int>(model.apps.size()));
+    }
+    const double textW = open.right() - 18 - 20 - 12 - textX;
+    const double titleSize = ui.fit(t.appsAllTitle, 19, 15, textW, true);
+    ui.text(textX, open.y + 40, ui.ellipsize(t.appsAllTitle, titleSize, textW, true), titleSize, rgb(kText), true);
+    ui.text(textX, open.y + 64, ui.ellipsize(count, 14, textW), 14, rgb(kTextMuted));
+    drawPolyline(cr, open.right() - 18 - 20, open.y + open.h / 2 - 10, 20, 20, kText, 2.4, {7, 4, 13, 10, 7, 16});
+    addButton({PanelAction::AppsOpenList}, open);
+
+    drawLines(ui, x, open.bottom() + 18 + 15, 22, wrapText(ui, t.appsInstallNote, 14, false, w, 3), 14, kTextMuted);
+}
+
+void MicPanel::drawAppsList(const frame_ui::Canvas& ui, const UiText& t, const Config& config, const PanelModel& model) {
+    cairo_t* cr = ui.cr;
+    drawModal(ui, kAppsModal, t.appsAllTitle, t.appsListSub);
+    const double contentH = model.apps.empty() ? 0 : model.apps.size() * (kAppRowH + kAppRowGap) - kAppRowGap;
+    beginList(kAppsList, contentH);
+    cairo_save(cr);
+    cairo_rectangle(cr, kAppsList.x - 2, kAppsList.y, kAppsList.w + 4, kAppsList.h);
+    cairo_clip(cr);
+    double y = kAppsList.y - listScroll_;
+    const double rowW = listMaxScroll_ > 0 ? kAppsList.w - 16 : kAppsList.w;
+    for (const frame_apps::Entry& entry : model.apps) {
+        if (y + kAppRowH >= kAppsList.y && y <= kAppsList.bottom()) {
+            drawAppRow(ui, t, config.language, entry, {kAppsList.x, y, rowW, kAppRowH}, true);
+        }
+        y += kAppRowH + kAppRowGap;
+    }
+    cairo_restore(cr);
+    endList(ui, contentH, kAppsList.right() - 6);
+
+    // 下: 補足と「インストーラーを開く」（メニューの Konsole がまだ開いていれば押せない）
+    fillRounded(cr, {kAppsList.x, 556, kAppsList.w, 1}, 0, kDivider);
+    const Rect menu {884, 648, 232, 56};
+    drawLines(ui, kAppsList.x, 574 + 14, 20, wrapText(ui, t.appsListNote, 13, false, 760, 3), 13, kTextMuted);
+    const std::string label = model.menuBusy ? t.appsChipBusy : t.appsOpenInstaller;
+    addButton({PanelAction::AppsOpenMenu}, frame_ui::drawButton(ui, menu, label, frame_ui::ButtonKind::Normal, !model.menuBusy));
+}
+
+void MicPanel::drawAppsConfirm(const frame_ui::Canvas& ui, const UiText& t, const Config& /*config*/,
+                               const PanelModel& model) {
+    using frame_apps::LaunchResult;
+    cairo_t* cr = ui.cr;
+    setColor(cr, kBackdrop, kBackdropAlpha);
+    frame_ui::roundedRect(cr, {0, 0, static_cast<double>(kWidth), static_cast<double>(kHeight)}, 24);
+    cairo_fill(cr);
+    const Rect card = kConfirmCard;
+    fillRounded(cr, card, 18, kCard);
+    strokeRounded(cr, card, 18, kBorder, 2);
+    const double x = card.x + 30;
+    const double w = card.w - 60;
+
+    // アプリ名とコマンドは、今の一覧（取ってきたものかもしれない）から呼び名で引く。Konsole に渡すのと同じ関数で作る
+    const frame_apps::Entry* entry = nullptr;
+    for (const frame_apps::Entry& e : model.apps) {
+        if (!confirmKey_.empty() && e.app.key == confirmKey_) entry = &e;
+    }
+    const bool unknownKey = !confirmKey_.empty() && entry == nullptr;  // 一覧が変わって消えた: 開かせない
+    double y = card.y + 28;
+    double titleX = x;
+    if (entry != nullptr) {
+        frame_apps::drawIcon(cr, *entry, x, y, 44);
+        titleX = x + 44 + 14;
+    }
+    const std::string title = entry != nullptr ? format1(t.appsConfirmTitleFormat, entry->app.name) : std::string(t.appsConfirmMenuTitle);
+    const double titleSize = ui.fit(title, 24, 16, card.right() - 30 - titleX, true);
+    ui.text(titleX, frame_ui::centerBaseline(y, 44, titleSize), ui.ellipsize(title, titleSize, card.right() - 30 - titleX, true),
+            titleSize, rgb(kText), true);
+    y += 44 + 22;
+    ui.text(x, y + 18, ui.ellipsize(t.appsConfirmLead, 17, w), 17, rgb(kTextSoft));
+    y += 25 + 10;
+    // 実行するコマンド（等幅。入りきらなければ空白で折り返す）
+    const frame_ui::Canvas mono {cr, fonts_.mono(), fonts_.mono(), frame_ui::Pointer {}};
+    const std::string command = frame_apps::installerCommand(entry != nullptr ? entry->app.key : std::string());
+    const std::vector<std::string> lines = wrapText(mono, command, 15, false, w - 32, 3);
+    const Rect code {x, y, w, 28 + lines.size() * 22.0};
+    fillRounded(cr, code, 12, kBg);
+    strokeRounded(cr, code, 12, kDivider, 1);
+    drawLines(mono, x + 16, y + 14 + 16, 22, lines, 15, kText);
+    y = code.bottom() + 18;
+    // 補足 3 つ（進み具合かメニュー・sudo を使わない・終わったら閉じる）
+    for (const char* note : {entry != nullptr ? t.appsConfirmProgress : t.appsConfirmMenu, t.appsConfirmNoSudo, t.appsConfirmClose}) {
+        const std::vector<std::string> rows = wrapText(ui, note, 14, false, w, 2);
+        drawLines(ui, x, y + 16, 23, rows, 14, kTextMuted);
+        y += rows.size() * 23.0;
+    }
+    // 開けなかった理由（赤）
+    const char* error = unknownKey ? t.appsErrorFailed : nullptr;
+    switch (launchResult_) {
+        case LaunchResult::Started: break;
+        case LaunchResult::Busy: error = t.appsErrorBusy; break;
+        case LaunchResult::NoDisplay: error = t.appsErrorNoDisplay; break;
+        case LaunchResult::NoKonsole: error = t.appsErrorNoKonsole; break;
+        case LaunchResult::UnknownApp:
+        case LaunchResult::Failed: error = t.appsErrorFailed; break;
+    }
+    if (error != nullptr) {
+        const double size = ui.fit(error, 14, 11, w, true);
+        ui.text(x, 544 - 14, ui.ellipsize(error, size, w, true), size, rgb(kDangerText), true);
+    }
+    // やめる・Konsole で開く（同じアプリ・メニューの Konsole がまだ開いていれば開けない）
+    const bool busy = unknownKey || (entry == nullptr && model.menuBusy) || (entry != nullptr && entry->busy);
+    addButton({PanelAction::AppsConfirmCancel}, frame_ui::drawButton(ui, {560, 544, 150, 56}, t.appsConfirmCancel));
+    addButton({PanelAction::AppsConfirmLaunch, 0, confirmKey_},
+              frame_ui::drawButton(ui, {724, 544, 186, 56}, t.appsConfirmLaunch, frame_ui::ButtonKind::Primary, !busy));
 }
 
 // ============================================================================
@@ -1926,7 +2182,7 @@ void MicPanel::render(const Config& config, const PanelModel& model) {
     cairo_restore(cr_);
 
     // 重ねた画面を出している間は、後ろの部品は乗っている・押している見た目にしない（押せない）
-    const bool modal = overlay_ != PanelOverlay::None && view_ == PanelView::Settings;
+    const bool modal = overlay_ != PanelOverlay::None;
     const frame_ui::Pointer live = pointer_;
     frame_ui::Pointer shown = pointer_;
     if (listDragging_) shown.inside = false;
@@ -1946,10 +2202,22 @@ void MicPanel::render(const Config& config, const PanelModel& model) {
         buttons_.clear();  // 後ろのボタンは押せない
         tracks_.clear();
         const frame_ui::Canvas top {cr_, fonts_.regular(), fonts_.bold(), shown};
-        if (overlay_ == PanelOverlay::OutputPicker) {
-            drawOutputPicker(top, t, config, model);
-        } else {
-            drawMicPicker(top, t, model);
+        switch (overlay_) {
+            case PanelOverlay::OutputPicker: drawOutputPicker(top, t, config, model); break;
+            case PanelOverlay::MicPicker: drawMicPicker(top, t, model); break;
+            case PanelOverlay::AppsList: drawAppsList(top, t, config, model); break;
+            case PanelOverlay::AppsConfirm:
+                if (confirmBack_ == PanelOverlay::AppsList) {
+                    // 一覧の上に確認を重ねる: 一覧は押せないようにして、もう一段暗くする
+                    const frame_ui::Canvas listUi {cr_, fonts_.regular(), fonts_.bold(), frame_ui::Pointer {}};
+                    drawAppsList(listUi, t, config, model);
+                    buttons_.clear();
+                }
+                listRect_ = {};
+                listMaxScroll_ = 0;
+                drawAppsConfirm(top, t, config, model);
+                break;
+            case PanelOverlay::None: break;
         }
     } else {
         listRect_ = {};

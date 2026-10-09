@@ -7,6 +7,7 @@
 #include "mic_state.h"
 #include "voice_check.h"
 
+#include "frame_apps.h"
 #include "frame_ui.h"
 #include "update_check.h"
 
@@ -60,6 +61,11 @@ enum class PanelAction {
     UpdateDismiss,    ///< 「閉じる」
     UpdateCheckOn,    ///< 「新しい版の確認」オン
     UpdateCheckOff,   ///< 「新しい版の確認」オフ
+    AppsOpenList,     ///< 「ささけんの Frame アプリ」の行（一覧を重ねる）
+    AppInstall,       ///< 「入れる」（key = インストーラーでの呼び名。パネルの中で確認の画面を出す）
+    AppsOpenMenu,     ///< 「インストーラーを開く」（パネルの中で確認の画面を出す）
+    AppsConfirmCancel,///< 確認の「やめる」（パネルの中で戻る）
+    AppsConfirmLaunch,///< 確認の「Konsole で開く」（key = 呼び名。空ならメニュー）
     // ---- 一番下の行 ----
     LanguageJa,
     LanguageEn,
@@ -94,6 +100,8 @@ enum class PanelOverlay {
     None,
     OutputPicker,  ///< 音の出口を選ぶ
     MicPicker,     ///< 使うマイク
+    AppsList,      ///< ささけんの Frame アプリ（アプリと更新の画面から）
+    AppsConfirm,   ///< 入れる前の確認（実行するコマンドを見せる）
 };
 
 /** 描くときに渡す、今の状態（メインが作る）。 */
@@ -104,6 +112,8 @@ struct PanelModel {
     std::string activeOutputKey;             ///< 今の出口（設定をかけている出口。空なら一覧の既定）
     bool switchNotice = false;               ///< 自動で切り替えた知らせを出すか
     std::string switchKey;                   ///< その出口
+    std::vector<frame_apps::Entry> apps;     ///< ささけんのほかのアプリ（使うものが先、自分は入っていない）
+    bool menuBusy = false;                   ///< インストーラーのメニューの Konsole がまだ開いている
 };
 
 /**
@@ -178,6 +188,12 @@ public:
 
     /** パネルが閉じた: マイクの設定の画面・今の出口の表示に戻し、重ねた画面を閉じる。 */
     void resetView();
+
+    /**
+     * Konsole を開いた結果を知らせる。開けたら確認の画面を閉じ（一覧から開いたなら一覧に戻る）、開けなければ理由を出す。
+     * @param result AppsManager::openInstaller の結果
+     */
+    void setLaunchResult(frame_apps::LaunchResult result);
 
     /** @return 今の画面 */
     PanelView view() const { return view_; }
@@ -298,6 +314,12 @@ public:
      * @param key 出口のキー
      */
     void setViewedOutputForPreview(const std::string& key) { viewKey_ = key; }
+    /**
+     * 入れる前の確認の画面を出す。
+     * @param key 呼び名（空ならメニュー）
+     * @param fromList 一覧から開いたか（やめると一覧に戻る）
+     */
+    void openConfirmForPreview(const std::string& key, bool fromList);
 
     /** @return 画像の幅（px） */
     int width() const;
@@ -357,6 +379,10 @@ private:
     PanelHit listPress_;            ///< 押した行・ボタン（ドラッグせずに離したら返す）
     double listStartY_ = 0.0;
     double listStartScroll_ = 0.0;
+    // ほかのアプリを入れる前の確認
+    std::string confirmKey_;                         ///< 入れるアプリの呼び名（空ならメニュー）
+    PanelOverlay confirmBack_ = PanelOverlay::None;  ///< やめたときに戻る画面（一覧から開いたなら一覧）
+    frame_apps::LaunchResult launchResult_ = frame_apps::LaunchResult::Started;  ///< 最後に開けなかった理由（Started なら無し）
 
     /**
      * バーの溝の上の x から値を出す（範囲に丸める）。
@@ -411,6 +437,16 @@ private:
     void drawFooter(const frame_ui::Canvas& ui, const UiText& t, const Config& config, const MicState& state);
     void drawOutputPicker(const frame_ui::Canvas& ui, const UiText& t, const Config& config, const PanelModel& model);
     void drawMicPicker(const frame_ui::Canvas& ui, const UiText& t, const PanelModel& model);
+    /** アプリと更新の画面の右のカード（いっしょに使うアプリと、一覧を開く行）。 */
+    void drawRelatedApps(const frame_ui::Canvas& ui, const UiText& t, const Config& config, const PanelModel& model);
+    /**
+     * アプリの行 1 つ（アイコン・名前・説明か理由・右に「入れる」か状態の札）。
+     * @param inList 重ねた一覧の中か（「このアプリで使う」の札を出し、ボタンは離したときに返す）
+     */
+    void drawAppRow(const frame_ui::Canvas& ui, const UiText& t, Language language, const frame_apps::Entry& entry,
+                    frame_ui::Rect row, bool inList);
+    void drawAppsList(const frame_ui::Canvas& ui, const UiText& t, const Config& config, const PanelModel& model);
+    void drawAppsConfirm(const frame_ui::Canvas& ui, const UiText& t, const Config& config, const PanelModel& model);
     /**
      * 重ねた画面の地（後ろを暗くし、枠のあるカード）と見出し・✕ を描く。
      * @return 中身を置き始める y

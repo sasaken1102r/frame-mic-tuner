@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: MIT — part of frame-apps by sasaken1102r, shipped under the host app's MIT license
+# Copied from the frame-apps repository by its sync.sh. Don't edit these files here:
+# change them in frame-apps and run sync.sh again. verify.sh checks that nothing was edited.
+version 0.3.1
+commit c9cd976
+synced 2026-10-10

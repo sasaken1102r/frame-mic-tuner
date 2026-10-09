@@ -38,8 +38,15 @@ add_executable(frame-mic-tuner
   vendor/frame-updater/cpp/update_check.cpp
   # 共通の UI 部品（色・寸法・切り替え・ボタン・カード・一番下の行）
   vendor/frame-ui/cpp/frame_ui.cpp
+  # ささけんのほかの Frame アプリの一覧と、インストーラーを Konsole で開く部品
+  vendor/frame-apps/cpp/frame_apps.cpp
+  vendor/frame-apps/cpp/frame_apps_data.cpp
+  vendor/frame-apps/cpp/frame_apps_catalog.cpp
+  vendor/frame-apps/cpp/frame_apps_icons.cpp
+  vendor/frame-apps/cpp/frame_apps_cairo.cpp
 )
-target_include_directories(frame-mic-tuner PRIVATE third_party/openvr vendor/frame-updater/cpp vendor/frame-ui/cpp)
+target_include_directories(frame-mic-tuner PRIVATE third_party/openvr vendor/frame-updater/cpp vendor/frame-ui/cpp
+                           vendor/frame-apps/cpp)
 target_compile_options(frame-mic-tuner PRIVATE -Wall -Wextra)
 # --version で出す版（CHANGELOG.md と合わせる）
 target_compile_definitions(frame-mic-tuner PRIVATE FRAME_MIC_TUNER_VERSION="${PROJECT_VERSION}")

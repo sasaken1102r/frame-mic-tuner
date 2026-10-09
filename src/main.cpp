@@ -14,6 +14,7 @@
 #include "voice_check.h"
 #include "vr_overlay.h"
 
+#include "frame_apps.h"
 #include "update_check.h"
 
 #include <fcntl.h>
@@ -111,8 +112,14 @@ struct Options {
     bool fakeExternalMic = false;   ///< 外付けのマイク（AB13X）を使っている
     std::string fakeViewing;        ///< 設定を表示する出口: 空 = 今の出口、ab13x、past（前に使った出口の 1 つ目）
     std::string view;               ///< settings / apps
-    std::string overlay;            ///< output / mic
+    std::string overlay;            ///< output / mic / apps / confirm / list-confirm
     std::string previewScroll;      ///< 重ねた画面の一覧のスクロール（px か end）
+    // ほかのアプリのダミー（--dump-png 用）
+    std::string fakeAux = "missing";  ///< frame-aux-shortcuts の状態: missing / installed / running
+    std::string fakeAppsBusy;         ///< Konsole を開いている呼び名（カンマ区切り。menu はメニュー）
+    int fakeAppsExtra = 0;            ///< 一覧に足すダミーのアプリの数（スクロールの見た目）
+    std::string fakeConfirm = "aux";  ///< 確認の画面のアプリ（呼び名。menu はメニュー）
+    std::string fakeLaunch;           ///< Konsole を開けなかった理由: busy / nodisplay / nokonsole / failed
 };
 
 /**
@@ -211,8 +218,14 @@ void printUsage() {
         "      --fake-external-mic  外付けのマイク（AB13X）を使っている\n"
         "      --fake-viewing ab13x|past  今の出口ではなく、その出口の設定を表示する\n"
         "      --view settings|apps  画面（マイクの設定 / アプリと更新）\n"
-        "      --overlay output|mic  重ねて出す画面（音の出口を選ぶ / 使うマイク）\n"
+        "      --overlay output|mic|apps|confirm|list-confirm  重ねて出す画面（音の出口を選ぶ / 使うマイク /\n"
+        "                        ささけんの Frame アプリ / 入れる前の確認 / 一覧から開いた確認）\n"
         "      --preview-scroll PX|end  重ねた画面の一覧のスクロール\n"
+        "      --fake-aux missing|installed|running  frame-aux-shortcuts の状態（ほかは見本の状態）\n"
+        "      --fake-apps-busy KEYS  Konsole を開いているアプリの呼び名（カンマ区切り。menu はメニュー）\n"
+        "      --fake-apps-extra N  一覧にダミーのアプリを N 個足す（一覧のスクロールの見た目）\n"
+        "      --fake-confirm KEY|menu  確認の画面のアプリ（既定 aux）\n"
+        "      --fake-launch busy|nodisplay|nokonsole|failed  Konsole を開けなかった表示\n"
         "  --test-record [S]     OpenVR なしで、既定の入力から S 秒（既定 3）録音 → ピークと長さを表示 → 既定の出力で再生\n"
         "                        （録音中と後に pw-metadata -n filters も表示する。音声はメモリの中だけ）\n"
         "  --contrast-report     画面の文字色・部品の色と背景の組み合わせごとに、WCAG のコントラスト比と合否を出す\n"
@@ -341,8 +354,30 @@ bool parseOptions(int argc, char** argv, Options& options) {
             }
         } else if (arg == "--overlay" && hasNext) {
             options.overlay = argv[++i];
-            if (options.overlay != "output" && options.overlay != "mic") {
-                std::fprintf(stderr, "--overlay は output か mic です: %s\n", options.overlay.c_str());
+            if (options.overlay != "output" && options.overlay != "mic" && options.overlay != "apps" &&
+                options.overlay != "confirm" && options.overlay != "list-confirm") {
+                std::fprintf(stderr, "--overlay は output / mic / apps / confirm / list-confirm です: %s\n",
+                             options.overlay.c_str());
+                return false;
+            }
+        } else if (arg == "--fake-aux" && hasNext) {
+            options.fakeAux = argv[++i];
+            if (options.fakeAux != "missing" && options.fakeAux != "installed" && options.fakeAux != "running") {
+                std::fprintf(stderr, "--fake-aux は missing / installed / running です: %s\n", options.fakeAux.c_str());
+                return false;
+            }
+        } else if (arg == "--fake-apps-busy" && hasNext) {
+            options.fakeAppsBusy = argv[++i];
+        } else if (arg == "--fake-apps-extra" && hasNext) {
+            options.fakeAppsExtra = std::max(0, std::min(20, std::atoi(argv[++i])));
+        } else if (arg == "--fake-confirm" && hasNext) {
+            options.fakeConfirm = argv[++i];
+        } else if (arg == "--fake-launch" && hasNext) {
+            options.fakeLaunch = argv[++i];
+            if (options.fakeLaunch != "busy" && options.fakeLaunch != "nodisplay" && options.fakeLaunch != "nokonsole" &&
+                options.fakeLaunch != "failed") {
+                std::fprintf(stderr, "--fake-launch は busy / nodisplay / nokonsole / failed です: %s\n",
+                             options.fakeLaunch.c_str());
                 return false;
             }
         } else if (arg == "--preview-scroll" && hasNext) {
@@ -864,6 +899,66 @@ frame_updater::UpdateStatus fakeUpdateStatus(const Options& options) {
 }
 
 /**
+ * ほかのアプリの一覧の設定（このアプリ自身の名前と、このアプリで使うアプリとその理由）。
+ * @return 設定（一覧の置き場所・ホームは今のユーザーのもの）
+ */
+frame_apps::ManagerConfig makeAppsConfig() {
+    frame_apps::ManagerConfig cfg;
+    cfg.self = kUpdateAppName;  // "frame-mic-tuner"（一覧に自分は出さない）
+    cfg.related = {{"frame-aux-shortcuts", uiText(Language::Ja).appsReasonAux, uiText(Language::En).appsReasonAux}};
+    return cfg;
+}
+
+/**
+ * このアプリの言語を frame-apps の言語にする（frame-apps は日英だけなので、簡体字中国語は英語の説明）。
+ * @param language 言語
+ * @return frame-apps の言語
+ */
+frame_apps::Lang appsLang(Language language) {
+    return language == Language::Ja ? frame_apps::Lang::Ja : frame_apps::Lang::En;
+}
+
+/**
+ * 見た目の確認用のダミーのアプリの一覧（同梱の一覧から。見本と同じく eye・perf は動作中、keyboard は入っている）。
+ * @param options コマンドライン（--fake-aux・--fake-apps-busy・--fake-apps-extra）
+ * @param menuBusy メニューの Konsole を開いているかの書き込み先
+ * @return 一覧
+ */
+std::vector<frame_apps::Entry> fakeApps(const Options& options, bool& menuBusy) {
+    using frame_apps::AppState;
+    frame_apps::ManagerConfig previewConfig = makeAppsConfig();
+    previewConfig.fetch.cacheDir.clear();  // 見本は同梱の一覧で（取ってきた一覧は使わない）
+    frame_apps::AppsManager apps(previewConfig);
+    std::vector<std::string> busy;
+    std::string rest = options.fakeAppsBusy;
+    while (!rest.empty()) {
+        const size_t comma = rest.find(',');
+        const std::string key = rest.substr(0, comma);
+        busy.push_back(key == "menu" ? std::string() : key);
+        rest = comma == std::string::npos ? std::string() : rest.substr(comma + 1);
+    }
+    const AppState aux = options.fakeAux == "running"     ? AppState::Running
+                         : options.fakeAux == "installed" ? AppState::Installed
+                                                          : AppState::Missing;
+    apps.setForPreview({{"frameeyeosc", AppState::Running},
+                        {"frame-jp-keyboard", AppState::Installed},
+                        {"frame-perf-overlay", AppState::Running},
+                        {"frame-aux-shortcuts", aux}},
+                       busy);
+    menuBusy = apps.busy("");
+    std::vector<frame_apps::Entry> entries = apps.entries();
+    for (int i = 0; i < options.fakeAppsExtra; ++i) {
+        frame_apps::Entry extra;
+        extra.app = {"frame-example-" + std::to_string(i + 1), "eye", "Ex", "[今後のアプリの説明がここに入ります]",
+                     "[A future app's description]", "frame-example.service", ".local/bin/frame-example",
+                     "frame-example-128.png", ""};
+        extra.state = AppState::Missing;
+        entries.push_back(extra);
+    }
+    return entries;
+}
+
+/**
  * --dump-png / --thumbnail-png: OpenVR なしでパネル（とサムネイル）を描いて PNG に書き出す。
  * @param options コマンドライン
  * @return 終了コード
@@ -897,15 +992,29 @@ int runDumpPng(const Options& options) {
         }
         model.voice = fakeVoiceView(options);
         model.update = fakeUpdateStatus(options);
+        model.apps = fakeApps(options, model.menuBusy);
         if (options.fakeSwitched) {
             model.switchNotice = true;
             model.switchKey = model.activeOutputKey;
         }
         MicPanel panel(fonts);
-        panel.showForPreview(options.view == "apps" ? PanelView::Apps : PanelView::Settings,
+        const bool appsOverlay = options.overlay == "apps" || options.overlay == "confirm" || options.overlay == "list-confirm";
+        panel.showForPreview(options.view == "apps" || appsOverlay ? PanelView::Apps : PanelView::Settings,
                              options.overlay == "output" ? PanelOverlay::OutputPicker
                              : options.overlay == "mic"  ? PanelOverlay::MicPicker
+                             : options.overlay == "apps" ? PanelOverlay::AppsList
                                                          : PanelOverlay::None);
+        if (options.overlay == "confirm" || options.overlay == "list-confirm") {
+            panel.openConfirmForPreview(options.fakeConfirm == "menu" ? std::string() : options.fakeConfirm,
+                                        options.overlay == "list-confirm");
+        }
+        if (!options.fakeLaunch.empty()) {
+            using frame_apps::LaunchResult;
+            panel.setLaunchResult(options.fakeLaunch == "busy"        ? LaunchResult::Busy
+                                  : options.fakeLaunch == "nodisplay" ? LaunchResult::NoDisplay
+                                  : options.fakeLaunch == "nokonsole" ? LaunchResult::NoKonsole
+                                                                      : LaunchResult::Failed);
+        }
         if (options.fakeViewing == "ab13x") panel.setViewedOutputForPreview(kFakeAb13xOut);
         if (options.fakeViewing == "past") panel.setViewedOutputForPreview("bluez_output.11_22_33_44_55_66");
         if (!options.previewScroll.empty()) {
@@ -1339,6 +1448,56 @@ int runSelfTest() {
                panel.viewedOutputKey() == kBuiltinSpeakerKey && panel.viewingActive());
     }
 
+    // ほかのアプリ: 「入れる」はまず確認の画面（コマンドを見せる）。「Konsole で開く」が呼び名を返し、開けたら確認を閉じる。
+    // 一覧から開いた確認は、やめると一覧に戻る
+    {
+        MicPanel panel(fonts);
+        const Config config;
+        PanelModel model = loadedModel(false);
+        model.apps = fakeApps(Options(), model.menuBusy);
+        panel.showForPreview(PanelView::Apps, PanelOverlay::None);
+        panel.render(config, model);
+        double x = 0.0;
+        double y = 0.0;
+        const bool installShown = panel.buttonCenter(PanelAction::AppInstall, x, y, "aux");
+        const PanelHit install = panel.pointerDown(x, y, 0.0);
+        panel.pointerUp();
+        panel.render(config, model);
+        double lx = 0.0;
+        double ly = 0.0;
+        const bool launchShown = panel.buttonCenter(PanelAction::AppsConfirmLaunch, lx, ly, "aux");
+        const PanelHit launch = panel.pointerDown(lx, ly, 0.1);
+        panel.pointerUp();
+        panel.setLaunchResult(frame_apps::LaunchResult::Started);
+        expect("アプリ: いっしょに使う aux の「入れる」で確認の画面、「Konsole で開く」が aux を返し、開けたら閉じる",
+               installShown && install.action == PanelAction::AppInstall && launchShown &&
+                   launch.action == PanelAction::AppsConfirmLaunch && launch.key == "aux" &&
+                   panel.overlay() == PanelOverlay::None);
+        expect("アプリ: 確認の画面のコマンドはインストーラーのもの",
+               frame_apps::installerCommand("aux") == "curl -fsSL https://frame.sasaken1102s.net | sh -s -- install aux" &&
+                   frame_apps::installerCommand("") == "curl -fsSL https://frame.sasaken1102s.net | sh");
+        panel.render(config, model);
+        panel.buttonCenter(PanelAction::AppsOpenList, x, y);
+        panel.pointerDown(x, y, 0.2);
+        panel.pointerUp();
+        panel.render(config, model);
+        const bool listOpen = panel.overlay() == PanelOverlay::AppsList && panel.buttonCenter(PanelAction::AppsOpenMenu, x, y);
+        panel.buttonCenter(PanelAction::AppInstall, x, y, "aux");
+        const PanelHit down = panel.pointerDown(x, y, 0.3);
+        const PanelHit up = panel.pointerUp();
+        panel.render(config, model);
+        panel.buttonCenter(PanelAction::AppsConfirmCancel, x, y);
+        panel.pointerDown(x, y, 0.4);
+        panel.pointerUp();
+        expect("アプリ: 一覧の「入れる」は離したときに確認を出し、やめると一覧に戻る",
+               listOpen && down.action == PanelAction::None && up.action == PanelAction::AppInstall && up.key == "aux" &&
+                   panel.overlay() == PanelOverlay::AppsList);
+        expect("アプリ: 一覧に自分（frame-mic-tuner）は出さず、aux が「このアプリで使う」で先頭",
+               !model.apps.empty() && model.apps.front().app.name == "frame-aux-shortcuts" && model.apps.front().related &&
+                   std::none_of(model.apps.begin(), model.apps.end(),
+                                [](const frame_apps::Entry& e) { return e.app.name == "frame-mic-tuner"; }));
+    }
+
     // 外付けのマイク: かんたん・細かく調整は使えず、「Frame 内蔵マイクに戻す」を出す。自動で切り替えた知らせは「元に戻す」を出す
     {
         MicPanel panel(fonts);
@@ -1494,6 +1653,13 @@ int runOverlay(const Options& options) {
     };
     VoiceCheck voice;
     VrOverlay vr;
+    // ほかのアプリの一覧（vendor/frame-apps）。サイトから取ってくるのは「新しい版の確認」がオンのときだけ（1 時間に 1 回まで。
+    // 取れなければ前回の分 → 同梱の一覧）
+    frame_apps::AppsManager apps(makeAppsConfig());
+    apps.refreshNow();
+    apps.setFetchEnabled(config.updateCheck);
+    if (apps.fetchIfDue()) std::fprintf(stderr, "[アプリ] サイトから一覧を取りに行きます\n");
+    std::string lastAppsError;
 
     // 新しい版の確認・更新（vendor/frame-updater）。古い版から来て install-args が無いときの既定はオプションなし
     frame_updater::UpdaterConfig updaterConfig;
@@ -1547,6 +1713,8 @@ int runOverlay(const Options& options) {
         model.activeOutputKey = outputSync.activeKey();
         model.switchNotice = outputSync.notice().shown;
         model.switchKey = outputSync.notice().key;
+        model.apps = apps.entries();
+        model.menuBusy = apps.busy("");
         return model;
     };
     {
@@ -1693,13 +1861,30 @@ int runOverlay(const Options& options) {
         const PanelAction action = hit.action;
         switch (action) {
             case PanelAction::None:
-            case PanelAction::ShowApps:          // 画面・重ねた画面の切り替えはパネルの中だけ
-            case PanelAction::ShowSettings:
+            case PanelAction::ShowSettings:      // 画面・重ねた画面の切り替えはパネルの中だけ
             case PanelAction::CloseOverlay:
             case PanelAction::UpdateInstall:     // 1 回目は確認の表示（パネルの中）
             case PanelAction::UpdateConfirmNo:
+            case PanelAction::AppInstall:        // まず確認の画面（パネルの中）。開くのは確認の「Konsole で開く」
+            case PanelAction::AppsOpenMenu:
+            case PanelAction::AppsConfirmCancel:
             case PanelAction::NsVadSlider:       // バーはドラッグのたびに下で送る
             case PanelAction::NsGraceSlider: break;
+            case PanelAction::ShowApps: apps.refreshIfStale(0); break;  // 入っているか・動いているかを見直す
+            case PanelAction::AppsOpenList:
+                // 一覧を開いたら、古ければサイトから取りに行く（オンのときだけ・1 時間に 1 回まで）
+                if (apps.fetchIfDue()) std::fprintf(stderr, "[アプリ] 一覧を開いたので、サイトから取りに行きます\n");
+                apps.refreshIfStale(0);
+                break;
+            case PanelAction::AppsConfirmLaunch: {
+                // ほかのアプリを入れる: Konsole でインストーラーを開く（中身は手で打ったときと同じ）
+                const frame_apps::LaunchResult result = apps.openInstaller(hit.key, appsLang(config.language));
+                panel.setLaunchResult(result);
+                std::fprintf(stderr, "[アプリ] Konsole でインストーラーを%s（%s）\n",
+                             result == frame_apps::LaunchResult::Started ? "開きました" : "開けませんでした",
+                             hit.key.empty() ? "メニュー" : hit.key.c_str());
+                break;
+            }
             case PanelAction::Quit:
                 std::fprintf(stderr, "[VR] パネルの「終了」で終了します\n");
                 userQuit = true;
@@ -1863,6 +2048,13 @@ int runOverlay(const Options& options) {
         // 新しい版の確認・更新の状態を進める（見えていない間も。GitHub に行くのはスクリプトのキャッシュが切れたときだけ）
         updater.tick(config.updateCheck);
         if (updater.revision() != drawnUpdateRevision) dirty = true;
+        // ほかのアプリ: 開いた Konsole が閉じた・systemctl が答えた・一覧を取ってきた（「新しい版の確認」がオフなら取りに行かない）
+        apps.setFetchEnabled(config.updateCheck);
+        if (apps.tick()) dirty = true;
+        if (apps.lastError() != lastAppsError) {
+            lastAppsError = apps.lastError();
+            if (!lastAppsError.empty()) std::fprintf(stderr, "[アプリ] 一覧: %s\n", lastAppsError.c_str());
+        }
 
         // ワーカーの状態が変わったら写しを取り、出口の設定を合わせる（閉じている間も: 出口が変わったら、その出口の設定をかける）
         if (worker.version() != drawnVersion) {
@@ -1875,6 +2067,8 @@ int runOverlay(const Options& options) {
         // パネルが見えている間だけ、ワーカーが 1 秒ごとに読み直す（見えていない間は既定の出力・入力を 2 秒おきに見るだけ）
         const bool visible = vr.panelVisible();
         worker.setActive(visible);
+        // アプリと更新の画面を見ている間は、ほかのアプリが入っているか・動いているかを 5 秒おきに見直す
+        if (visible && panel.view() == PanelView::Apps) apps.refreshIfStale(5);
         // パネルが閉じたら、録音はすぐ止める（見えないところで録らない）。再生も止めて、PipeWire のストリームを片付ける
         if (!visible && wasVisible) {
             if (voice.busy()) std::fprintf(stderr, "[声] パネルが閉じたので、録音・再生を止めます\n");

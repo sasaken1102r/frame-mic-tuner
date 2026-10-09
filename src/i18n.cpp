@@ -119,6 +119,22 @@ const UiText kJapanese = {
     "%s を入れました。終了して起動し直すと新しい版になります",
     "WirePlumber のスクリプトも変わったときは、ヘッドセットも再起動してね（~/.cache/frame-mic-tuner/update.log に出ます）",
     "リリースページ: ",
+    // アプリと更新: ほかのアプリ（frame-apps の strings.md のとおり）
+    "いっしょに使うアプリ", "このアプリの機能で使うものだけを出しています", "aux ボタンで、マイクのミュートを切り替える",
+    "ささけんの Frame アプリ", "%1$d 個のうち %2$d 個が入っていません", "%d 個すべて入っています",
+    "入れる", "動作中", "入っています", "Konsole で実行中…", "このアプリで使う",
+    "入れるときは Konsole が開いて、インストーラーが動きます。sudo は使わず、入るのはホームフォルダの中だけです",
+    "入れる・更新する・消すは、Konsole のインストーラーで行います",
+    "一覧は「新しい版の確認」がオンのとき、frame.sasaken1102s.net から取ってきます（1 時間に 1 回まで。取れなければ前回の分か同梱の一覧）",
+    "インストーラーを開く",
+    "%s を入れる", "インストーラーを開く", "Konsole が開いて、このコマンドを実行します",
+    "進み具合は Konsole に出ます（聞かれることがあれば、そこで答えます）",
+    "メニューから、入れる・更新する・消すアプリを番号で選びます",
+    "sudo は使いません。入るのはホームフォルダの中だけです",
+    "終わったら Konsole を閉じてね。このパネルの表示も変わります",
+    "やめる", "Konsole で開く",
+    "同じアプリの Konsole がまだ開いています", "Konsole を開けませんでした: 画面が見つかりません（DISPLAY がありません）",
+    "Konsole を開けませんでした: Konsole が入っていません", "Konsole を開けませんでした",
 };
 
 const UiText kEnglish = {
@@ -181,6 +197,22 @@ const UiText kEnglish = {
     "%s is installed. Quit and start the app again to use it",
     "If the WirePlumber script changed too, restart the headset (see ~/.cache/frame-mic-tuner/update.log)",
     "Release page: ",
+    // Apps & updates: other apps (as in frame-apps' strings.md)
+    "Companion apps", "Only the apps this app uses", "Toggles the mic mute with the aux button",
+    "Frame apps by sasaken@", "%2$d of %1$d not installed", "All %d are installed",
+    "Install", "Running", "Installed", "Running in Konsole…", "Used by this app",
+    "Installing opens the installer in Konsole. No sudo; everything goes into your home folder",
+    "Install, update and remove in the installer in Konsole",
+    "With update checks on, this list comes from frame.sasaken1102s.net (at most hourly; otherwise the last one or the built-in one)",
+    "Open the installer",
+    "Install %s", "Open the installer", "Konsole opens and runs this command",
+    "Konsole shows the progress (answer any questions there)",
+    "In the menu, pick the apps to install, update or remove by number",
+    "No sudo; everything goes into your home folder",
+    "Close Konsole when it's done; this panel updates too",
+    "Cancel", "Open in Konsole",
+    "A Konsole for this app is still open", "Couldn't open Konsole: no screen (DISPLAY isn't set)",
+    "Couldn't open Konsole: Konsole isn't installed", "Couldn't open Konsole",
 };
 
 const UiText kSimplifiedChinese = {
@@ -242,6 +274,22 @@ const UiText kSimplifiedChinese = {
     "已安装 %s。退出并重新启动，即可使用新版本",
     "如果 WirePlumber 脚本也有变化，请同时重启头显（见 ~/.cache/frame-mic-tuner/update.log）",
     "发布页面：",
+    // 应用与更新：其他应用（按 frame-apps 的 strings.md 翻译）
+    "配合使用的应用", "只显示本应用的功能会用到的应用", "用 aux 按钮切换麦克风静音",
+    "sasaken@ 的 Frame 应用", "共 %1$d 个，其中 %2$d 个未安装", "%d 个全部已安装",
+    "安装", "运行中", "已安装", "正在 Konsole 中运行…", "本应用会用到",
+    "安装时会打开 Konsole 运行安装程序。不使用 sudo，只安装到主文件夹中",
+    "安装、更新和删除都在 Konsole 的安装程序中进行",
+    "“检查新版本”打开时，会从 frame.sasaken1102s.net 获取此列表（最多每小时一次；获取不到时使用上次的列表或内置列表）",
+    "打开安装程序",
+    "安装 %s", "打开安装程序", "将打开 Konsole 并运行以下命令",
+    "安装进度会显示在 Konsole 中（如有提问，请在那里回答）",
+    "在菜单中用编号选择要安装、更新或删除的应用",
+    "不使用 sudo，只安装到主文件夹中",
+    "完成后请关闭 Konsole，此面板的显示也会随之更新",
+    "取消", "在 Konsole 中打开",
+    "这个应用的 Konsole 还开着", "无法打开 Konsole：找不到屏幕（没有 DISPLAY）",
+    "无法打开 Konsole：没有安装 Konsole", "无法打开 Konsole",
 };
 
 }  // namespace

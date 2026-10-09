@@ -35,11 +35,14 @@ public:
     cairo_font_face_t* regular() const { return regular_; }
     /** @return 太字用フォント */
     cairo_font_face_t* bold() const { return bold_; }
+    /** @return 等幅フォント（本文用の .ttc の 5 番 = Noto Sans Mono CJK JP。インストーラーのコマンドの表示に使う） */
+    cairo_font_face_t* mono() const { return mono_; }
 
 private:
     void* ftLibrary_ = nullptr;  ///< FT_Library
     cairo_font_face_t* regular_ = nullptr;
     cairo_font_face_t* bold_ = nullptr;
+    cairo_font_face_t* mono_ = nullptr;
     std::string regularPath_;
     std::string boldPath_;
 
@@ -47,9 +50,12 @@ private:
      * フォントファイルから cairo のフォントを作る。
      * @param path フォントファイル
      * @param bold 代わりのフォントを太字にするか
+     * @param index .ttc の何番目か（0 = 日本語）
+     * @param fallback 読めないときに fontconfig で探す名前
      * @return 作ったフォント
      */
-    cairo_font_face_t* createFace(const std::string& path, bool bold);
+    cairo_font_face_t* createFace(const std::string& path, bool bold, long index = 0,
+                                  const char* fallback = "Noto Sans CJK JP");
 
     /** 読み込んだフォントを手放す。 */
     void release();

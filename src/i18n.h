@@ -152,6 +152,35 @@ struct UiText {
     const char* updateInstalledFormat;  ///< 入れ終わった（%s は版）
     const char* updateInstalledHint;    ///< 入れ終わりの補足（WirePlumber が変わったらヘッドセットの再起動）
     const char* updateReleasePage;      ///< 「リリースページ: 」（手で更新するときに URL の前に出す）
+    // ---- アプリと更新: ほかのアプリ（vendor/frame-apps/strings.md から。簡体字中国語はこのアプリで訳した） ----
+    const char* appsRelatedTitle;       ///< いっしょに使うアプリ
+    const char* appsRelatedHint;        ///< このアプリの機能で使うものだけを出しています
+    const char* appsReasonAux;          ///< frame-aux-shortcuts を使う理由
+    const char* appsAllTitle;           ///< ささけんの Frame アプリ
+    const char* appsAllCountFormat;     ///< %1$d 個のうち %2$d 個が入っていません
+    const char* appsAllInstalledFormat; ///< %d 個すべて入っています
+    const char* appsInstall;            ///< 入れる
+    const char* appsChipRunning;        ///< 動作中
+    const char* appsChipInstalled;      ///< 入っています
+    const char* appsChipBusy;           ///< Konsole で実行中…
+    const char* appsRelatedTag;         ///< このアプリで使う
+    const char* appsInstallNote;        ///< いっしょに使うアプリの下の説明（Konsole・sudo なし・ホームの中だけ）
+    const char* appsListSub;            ///< 一覧の見出しの下
+    const char* appsListNote;           ///< 一覧の下の補足
+    const char* appsOpenInstaller;      ///< インストーラーを開く
+    const char* appsConfirmTitleFormat; ///< %s を入れる
+    const char* appsConfirmMenuTitle;   ///< インストーラーを開く
+    const char* appsConfirmLead;        ///< Konsole が開いて、このコマンドを実行します
+    const char* appsConfirmProgress;    ///< 1 つを入れるとき
+    const char* appsConfirmMenu;        ///< メニューのとき
+    const char* appsConfirmNoSudo;      ///< sudo は使いません…
+    const char* appsConfirmClose;       ///< 終わったら Konsole を閉じてね…
+    const char* appsConfirmCancel;      ///< やめる
+    const char* appsConfirmLaunch;      ///< Konsole で開く
+    const char* appsErrorBusy;          ///< LaunchResult::Busy
+    const char* appsErrorNoDisplay;     ///< LaunchResult::NoDisplay
+    const char* appsErrorNoKonsole;     ///< LaunchResult::NoKonsole
+    const char* appsErrorFailed;        ///< LaunchResult::Failed・UnknownApp
 };
 
 /**

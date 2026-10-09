@@ -148,6 +148,7 @@ wpctl settings --save frame-mic.noise-suppression true   # ノイズ除去オン
   - **送るもの**: `api.github.com` に、このプロジェクトの最新のリリースを聞く HTTPS のリクエストを 1 つ送るだけです。アカウント・ID・使い方のデータは入れません。ふつうのウェブのリクエストと同じく、GitHub には IP アドレスと `curl` の User-Agent が見えます。録音・設定・ログは送りません
   - **受け取るもの**: 最新のリリースの版の番号・リリースページ・ファイルの名前とリンクです。答えは `~/.cache/frame-mic-tuner/update-check.json` に置きます
   - **更新する を押して確認したときだけ**、そのリリースのファイルと `SHA256SUMS` を `github.com` / `*.githubusercontent.com` からダウンロードします
+- **新しい版の確認** がオンのときは、作者のほかの Steam Frame アプリの一覧とアイコンも `frame.sasaken1102s.net` から取ってきます（1 時間に 1 回まで。作者のほかのアプリと共有し、`~/.cache/frame-apps/` に置きます）。**新しい版の確認** をオフにするとこれも止まり、前に取った一覧か、アプリに入っている一覧を出します。**アプリと更新** からほかのアプリを入れるときは、Konsole が開いて確認の画面に出したインストーラーのコマンドを実行し、Konsole の中で `frame.sasaken1102s.net` と GitHub につなぎます
 - 書き込むファイルは、画面の言語・最後に開いていたタブ・ノイズ除去の強さ・新しい版の自動確認の設定を保存する `~/.config/frame-mic-tuner/config.json`、直前の `./install.sh` のオプションを覚えておく `~/.config/frame-mic-tuner/install-args`（更新のときに同じオプションで入れ直すため）、新しい版の確認の答え・更新のログと状態・更新中のロックのフォルダ（`update.lock/`）・作業用のフォルダ（ダウンロードしたものは更新のたびに消す）を置く `~/.cache/frame-mic-tuner/`、二重起動を防ぐためのロックファイル（`$XDG_RUNTIME_DIR` の中、中身はプロセス ID だけ）です。更新すると、`./install.sh` を実行したときと同じく、インストールしたファイルも書き換わります
 
 ## 免責事項

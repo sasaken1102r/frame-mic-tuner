@@ -33,9 +33,9 @@ FontSet::~FontSet() {
     // FT_Face は cairo が持っている間は生きている必要があるので、FT_Library は閉じない（終了時に OS が片付ける）
 }
 
-cairo_font_face_t* FontSet::createFace(const std::string& path, bool bold) {
+cairo_font_face_t* FontSet::createFace(const std::string& path, bool bold, long index, const char* fallback) {
     FT_Face face = nullptr;
-    if (ftLibrary_ != nullptr && FT_New_Face(static_cast<FT_Library>(ftLibrary_), path.c_str(), 0, &face) == 0) {
+    if (ftLibrary_ != nullptr && FT_New_Face(static_cast<FT_Library>(ftLibrary_), path.c_str(), index, &face) == 0) {
         cairo_font_face_t* cairoFace = cairo_ft_font_face_create_for_ft_face(face, 0);
         if (cairo_font_face_set_user_data(cairoFace, &kFtFaceKey, face, destroyFtFace) == CAIRO_STATUS_SUCCESS) {
             return cairoFace;
@@ -43,8 +43,8 @@ cairo_font_face_t* FontSet::createFace(const std::string& path, bool bold) {
         cairo_font_face_destroy(cairoFace);
         FT_Done_Face(face);
     }
-    std::fprintf(stderr, "[描画] フォント %s を読めないので Noto Sans CJK JP を探して使います\n", path.c_str());
-    return cairo_toy_font_face_create("Noto Sans CJK JP", CAIRO_FONT_SLANT_NORMAL,
+    std::fprintf(stderr, "[描画] フォント %s（%ld 番）を読めないので %s を探して使います\n", path.c_str(), index, fallback);
+    return cairo_toy_font_face_create(fallback, CAIRO_FONT_SLANT_NORMAL,
                                       bold ? CAIRO_FONT_WEIGHT_BOLD : CAIRO_FONT_WEIGHT_NORMAL);
 }
 
@@ -52,8 +52,10 @@ void FontSet::release() {
     // cairo_t が参照を持っていれば、そちらが手放すまでフォントは生きている
     if (regular_ != nullptr) cairo_font_face_destroy(regular_);
     if (bold_ != nullptr) cairo_font_face_destroy(bold_);
+    if (mono_ != nullptr) cairo_font_face_destroy(mono_);
     regular_ = nullptr;
     bold_ = nullptr;
+    mono_ = nullptr;
 }
 
 void FontSet::load(const std::string& regularPath, const std::string& boldPath) {
@@ -61,6 +63,7 @@ void FontSet::load(const std::string& regularPath, const std::string& boldPath) 
     release();
     regular_ = createFace(regularPath, false);
     bold_ = createFace(boldPath, true);
+    mono_ = createFace(regularPath, false, 5, "Noto Sans Mono CJK JP");
     regularPath_ = regularPath;
     boldPath_ = boldPath;
 }
