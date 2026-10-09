@@ -205,6 +205,7 @@ void MicWorker::run() {
     Clock::time_point nextDevices = Clock::now();
     Clock::time_point nextDefaultPoll = after(kDefaultPollSec);
     bool initial = true;  // 始めた直後に 1 回、設定と一覧をまとめて読む（メインが今の出口の設定をかけるため）
+    int settingsRetries = 10;  // 始めた直後に設定を読めなかったときに、既定を見るついでに読み直す残りの回数
     std::unique_lock<std::mutex> lock(mutex_);
     while (!stop_) {
         if (!queue_.empty()) {
@@ -357,9 +358,18 @@ void MicWorker::run() {
             const bool ok = readDefaultNames(sink, source);
             lock.lock();
             const AudioDevices& known = state_.devices;
-            if (!ok || (known.defaultsKnown && sink == known.defaultSinkName && source == known.defaultSourceName)) continue;
-            std::fprintf(stderr, "[出口] 既定が変わりました: 出力 %s・入力 %s\n", sink.empty() ? "（なし）" : sink.c_str(),
-                         source.empty() ? "（なし）" : source.c_str());
+            const bool same = known.defaultsKnown && sink == known.defaultSinkName && source == known.defaultSourceName;
+            // 起動した直後に WirePlumber がまだで設定を読めなかったときは、しばらく（最大 10 回）読み直す
+            const bool retry = settingsRetries > 0 && (!state_.echoKnown || !state_.nsKnown) &&
+                               state_.readError != MicError::NotInstalled;
+            if (!ok || (same && !retry)) continue;
+            if (same) {
+                --settingsRetries;
+                std::fprintf(stderr, "[マイク] 設定をまだ読めていないので、読み直します\n");
+            } else {
+                std::fprintf(stderr, "[出口] 既定が変わりました: 出力 %s・入力 %s\n", sink.empty() ? "（なし）" : sink.c_str(),
+                             source.empty() ? "（なし）" : source.c_str());
+            }
             lock.unlock();
             MicState fresh = readMicState(false);
             fresh.devices = readDevicesWithFallback();

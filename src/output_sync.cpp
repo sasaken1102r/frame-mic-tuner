@@ -97,6 +97,13 @@ bool OutputSync::update(const MicState& state, Config& config, const std::string
     if (!state.loaded || !state.devices.defaultsKnown) return false;
     const std::string key = state.devices.defaultOutputKey;
     if (key.empty()) return false;
+    if (!isDeviceOutputKey(key)) {
+        // フィルターや仮想の出口（本物の機器ではない）が既定: 出口の設定は何もかけず、今のまま
+        if (key != skippedKey_) std::fprintf(stderr, "[出口] 既定の出力 %s は機器の出口ではないので、設定はかけません\n", key.c_str());
+        skippedKey_ = key;
+        return false;
+    }
+    skippedKey_.clear();
     const bool liveKnown = state.echoKnown && state.nsKnown;
     // 頼んだ書き込みが終わり、その後に読んだ状態か（自動でかけた直後の値を「外からの変化」と読み違えない）
     const bool settled = state.writesDone >= waitTicket_ && state.writeError == MicError::None;

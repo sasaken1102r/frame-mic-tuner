@@ -155,6 +155,10 @@ bool isBuiltinSpeaker(const std::string& key) {
     return key.find("HiFi__Speaker__sink") != std::string::npos;
 }
 
+bool isDeviceOutputKey(const std::string& key) {
+    return isDeviceSinkName(key);
+}
+
 bool isBuiltinMic(const std::string& key) {
     return key.find("HiFi__Mic__source") != std::string::npos;
 }

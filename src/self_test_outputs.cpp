@@ -244,6 +244,24 @@ void outputSelfTests(const Expect& expect) {
                    worker.commands[0].value && !worker.commands[0].onlyIfChanged && !sync.notice().shown);
     }
     {
+        // フィルターや仮想の出口（echo_cancel_sink など）が既定になったときは、何もかけず、今の出口も変えない
+        FakeWorker worker;
+        OutputSync sync(worker.request());
+        Config config;
+        config.outputsSaved = true;
+        config.outputs[kBuiltinSpeakerKey] = firstProfile(kBuiltinSpeakerKey, "Built-in Audio");
+        sync.update(stateWith(frame, true, false), config, "2026-10-10");
+        worker.commands.clear();
+        AudioDevices virtualDefault = frame;
+        virtualDefault.defaultSinkName = "echo_cancel_sink";
+        virtualDefault.defaultOutputKey = "echo_cancel_sink";
+        const bool changed = sync.update(stateWith(virtualDefault, true, false), config, "2026-10-10");
+        expect("仮想の出口が既定: 設定をかけず、覚える出口も作らない",
+               !changed && worker.commands.empty() && config.outputs.count("echo_cancel_sink") == 0 &&
+                   sync.activeKey() == kBuiltinSpeakerKey && isDeviceOutputKey(kAb13xKey) &&
+                   isDeviceOutputKey("bluez_output.AA_BB_CC_DD_EE_FF") && !isDeviceOutputKey("speaker-ref-sink"));
+    }
+    {
         // 同じ設定の出口に変わったときは、何も変わらないので知らせない
         FakeWorker worker;
         OutputSync sync(worker.request());

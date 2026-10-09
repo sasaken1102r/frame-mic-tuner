@@ -71,6 +71,13 @@ std::string endpointKey(const std::string& nodeName);
 bool isBuiltinSpeaker(const std::string& key);
 
 /**
+ * 本物の機器の出口のキーか（alsa_output.* / bluez_output.*）。フィルターや仮想の出口が既定のときは、出口の設定をかけない。
+ * @param key 出口のキー
+ * @return そうなら true
+ */
+bool isDeviceOutputKey(const std::string& key);
+
+/**
  * @param key マイクのキー
  * @return Frame 内蔵マイクなら true（名前に HiFi__Mic__source を含む）
  */

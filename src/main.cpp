@@ -2060,7 +2060,9 @@ int runOverlay(const Options& options) {
         if (worker.version() != drawnVersion) {
             drawnVersion = worker.snapshot(state);
             logState(state);
+            const std::string activeBefore = outputSync.activeKey();
             if (outputSync.update(state, config, todayText())) saveNow();
+            if (outputSync.activeKey() != activeBefore) panel.followActiveOutput();  // 表示も新しい出口へ
             dirty = true;
         }
 

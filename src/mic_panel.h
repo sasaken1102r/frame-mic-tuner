@@ -189,6 +189,9 @@ public:
     /** パネルが閉じた: マイクの設定の画面・今の出口の表示に戻し、重ねた画面を閉じる。 */
     void resetView();
 
+    /** 今の出口が変わった（自動の切り替え・ここから音を出す）: 設定の表示を今の出口に戻す。 */
+    void followActiveOutput() { viewKey_.clear(); }
+
     /**
      * Konsole を開いた結果を知らせる。開けたら確認の画面を閉じ（一覧から開いたなら一覧に戻る）、開けなければ理由を出す。
      * @param result AppsManager::openInstaller の結果

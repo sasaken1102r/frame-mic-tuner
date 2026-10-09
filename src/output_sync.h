@@ -67,6 +67,7 @@ private:
     bool started_ = false;     ///< 起動したときの設定をかけた
     uint64_t waitTicket_ = 0;  ///< この受付番号の書き込みが終わるまで、外からの変化を取り込まない
     Notice notice_;
+    std::string skippedKey_;   ///< 機器の出口ではないので見送った既定の出力（同じログを連打しない）
 
     /**
      * 出口の設定をかける（ワーカーに頼む）。
