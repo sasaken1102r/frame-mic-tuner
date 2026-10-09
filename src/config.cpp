@@ -68,7 +68,7 @@ bool loadConfig(const std::string& path, Config& out, std::vector<std::string>& 
     }
     if (const JsonValue* language = root.get("language")) {
         if (!language->isString() || !parseLanguage(language->text, config.language)) {
-            warnings.push_back("language は \"ja\" か \"en\" で書いてください");
+            warnings.push_back("language は \"ja\"、\"en\"、\"sc\" のいずれかで書いてください");
         }
     }
     if (const JsonValue* tab = root.get("tab")) {

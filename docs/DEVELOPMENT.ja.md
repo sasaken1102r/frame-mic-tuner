@@ -62,7 +62,7 @@ SteamVR のダッシュボードの下の並びに「Mic」のアイコン（マ
 | つながり | （表示だけ） | 「マイク ─ 音質補正 ─ エコー除去 ─ ノイズ除去 ─ アプリへ」のパイプライン図。実際に通っている段はアクセントの薄い塗り＋実線の枠＋太字で、通り道の線もアクセント。通っていない段は点線の枠＋細字で、線は下を回って飛ばす |
 | 声のチェック | ● 録音 / ■ 停止、履歴の ▶ / ■ | アプリに届く音を最大 10 秒録って、5 件まで聞き比べる（下の「声のチェック」） |
 | 更新の帯（全幅のカード） | 今すぐ確かめる / 更新する（確認: やめる・更新する）/ もう一度・閉じる / 閉じる | `vendor/frame-updater` の `UpdateChecker` の状態を出す（文言は strings.md のまま）。最新・確認中・更新中・版だけ（未確認）は普段の枠。新しい版あり・確認・入れ終わりはアクセントの枠、更新の失敗は赤い枠（理由、もう一度・閉じる）。確認の失敗は文字だけ赤で枠は普段のまま（今の版は動いたままで、オフラインだと毎日出るため）。「更新する」の 1 回目は確認の表示（2 行目に補足、やめる・更新する）にするだけで、3 秒以内の 2 回目で `install()`。やめる・ほかのボタン・3 秒で取り消し。更新中は 2 行目に確認と同じ補足。確認の補足と入れ終わりの文は、install.sh が常駐を再起動しないこのアプリに合わせて strings.md から変えている（「終わったら、終了して起動し直すと新しい版になります」）。入れ終わりは 2 行目に「WirePlumber のスクリプトも変わったときはヘッドセットも再起動」。手で更新する版は 2 行目に理由とリリースページの URL。確かめている間はボタンを出さない。インストールは `frame-update.sh install --detach`（`frame-mic-tuner-update` の一時ユニット）で、`install.sh` は動いている常駐を再起動しないので、新しい版になるのは終了して起動し直したとき |
-| 下の 1 行: 言語 | 日本語 / English | 文言をすぐ切り替える（設定ファイルに保存） |
+| 下の 1 行: 言語 | 日本語 / English / 简体中文 | 日本語・英語・簡体字中国語の文言をすぐ切り替える（設定ファイルに保存） |
 | 下の 1 行: SteamVR と一緒に起動 | オン / オフ | `systemctl --user enable` / `disable frame-mic-tuner.service`（下の「自動起動」）。ユニットファイルが入っていないときはグレーで押せず、「準備されていません」と出る |
 | 下の 1 行: 終了 | | 押すと 3 秒間「もう一度押すと終了」になり、その間にもう一度押すと終了（終了コード 3） |
 
@@ -85,7 +85,7 @@ SteamVR のダッシュボードの下の並びに「Mic」のアイコン（マ
   - 未使用のときの `pw-link -l` は、マイクから `alsa_loopback_stream...` へ直接つながる形（「マイク → アプリへ」と「使っていないので処理はお休み中」）
 - パネルがダッシュボードで**開いている間だけ** 1 秒ごとに読み直す（外から `wpctl settings --save ...` で変えられても、1 秒以内に表示が合う）。自動起動の状態（`systemctl --user is-enabled`）はめったに変わらないので、開いた直後と 5 秒おき
 - ボタンを押したら、書く → すぐ読み直す → 表示に反映。書いた値は読み返して確かめ、違えば失敗として赤く出す
-- スクリーンショット: `docs/v10-*-quick-speaker_*.png`（`--dump-png --tab quick --fake --fake-echo on --fake-ns off --fake-history 5 --fake-playing 1 --fake-update uptodate` で書き出したもの）と `docs/v10-*-fine_*.png`（`--dump-png --tab fine --fake --fake-echo on --fake-ns on --fake-ns-vad 10 --fake-ns-grace 800 --fake-history 5 --fake-playing 2 --fake-update uptodate`）。どちらも `--language ja|en` で日英を撮る。`--tab quick|fine` で描くタブを選べる。更新の帯は `--fake-update` を付けないと「v0.2.0」（未確認）になるので、スクリーンショットでは `uptodate`（最新版です）にそろえる
+- スクリーンショット: `docs/v10-*-quick-speaker_*.png`（`--dump-png --tab quick --fake --fake-echo on --fake-ns off --fake-history 5 --fake-playing 1 --fake-update uptodate` で書き出したもの）と `docs/v10-*-fine_*.png`（`--dump-png --tab fine --fake --fake-echo on --fake-ns on --fake-ns-vad 10 --fake-ns-grace 800 --fake-history 5 --fake-playing 2 --fake-update uptodate`）。どちらも `--language ja|en|sc` で日本語・英語・簡体字中国語を撮る。`--tab quick|fine` で描くタブを選べる。更新の帯は `--fake-update` を付けないと「v0.2.0」（未確認）になるので、スクリーンショットでは `uptodate`（最新版です）にそろえる
 
 ## ノイズ除去の強さ
 
@@ -198,7 +198,7 @@ ssh steamos@<headset-ip> 'cd ~/frame-mic-tuner && cmake -G Ninja -S . -B build &
 ```
 
 - `--print` は `pw-link -l` のうちマイクの通り道の行も出す（表示とリンクが合っているかを見比べる用）
-- `--dump-png` は今の実際の値で描く。`--fake` か `--fake-*` を付けると実際の値を読まずにダミーで描く（`--fake-echo on|off`・`--fake-ns on|off`・`--fake-idle`・`--fake-loading`・`--fake-autostart on|off|missing|unknown`・`--fake-error read|not-installed|links|write|autostart`）。`--preview-quit` で「もう一度押すと終了」の状態、`--language ja|en` で言語を指定
+- `--dump-png` は今の実際の値で描く。`--fake` か `--fake-*` を付けると実際の値を読まずにダミーで描く（`--fake-echo on|off`・`--fake-ns on|off`・`--fake-idle`・`--fake-loading`・`--fake-autostart on|off|missing|unknown`・`--fake-error read|not-installed|links|write|autostart`）。`--preview-quit` で「もう一度押すと終了」の状態、`--language ja|en|sc` で言語を指定
 - 声のチェックの見た目: `--fake-recording`（録音中）・`--fake-history N`（ダミーの履歴 N 件）・`--fake-playing I`（I 件目を再生中）・`--fake-voice-error record|play`・`--preview-pressed earphone|speaker|record`（押している間）
 - ノイズ除去の強さの見た目: `--fake-ns-vad N`・`--fake-ns-grace N`（ダミーの値）・`--preview-drag-vad N`・`--preview-drag-grace N`（そのバーを N までドラッグしている）
 - `contrib/icons/frame-mic-tuner-{48,128,256}.png` は `--thumbnail-png` で書き出したもの（ダッシュボードのサムネイルと同じ絵）
@@ -254,14 +254,14 @@ systemd から起動されたのに、すでに常駐がいるとき（手で起
 
 | キー | 既定値 | 説明 |
 |---|---|---|
-| `language` | Steam の言語 | 画面の文言の言語。無いときは Steam の言語設定（`~/.steam/registry.vdf` の `language`、読むだけ）が `japanese` なら日本語、それ以外は英語（読めなければ `LC_ALL`・`LC_MESSAGES`・`LANG`）。`"ja"`（日本語）か `"en"`（English）。パネルの言語のボタンで変えると保存される（一時ファイルに書いてから置き換える） |
+| `language` | Steam の言語 | 画面の文言の言語。無いときは Steam の言語設定（`~/.steam/registry.vdf` の `language`、読むだけ）が `japanese` なら日本語、`schinese`・`chinese` なら簡体字中国語、それ以外（`tchinese` を含む）は英語（Steam の値が読めなければ `LC_ALL`・`LC_MESSAGES`・`LANG` の `ja` / `zh_CN` も見る）。`"ja"`（日本語）、`"en"`（English）、`"sc"`（简体中文）。パネルの言語ボタンで変えると保存される（一時ファイルに書いてから置き換える） |
 | `tab` | `"quick"` | 最後に見ていたタブ。`"quick"`（かんたん）か `"fine"`（細かく調整）。タブを切り替えたときに書かれ、パネルを開いたときにこのタブを出す |
 | `ns_vad_threshold_percent` | （無し） | ノイズ除去の判定の厳しさ（0〜99）。バーを動かしたときに書かれ、アプリが起動したときにかけ直す。`ns_vad_grace_ms` と 2 つそろっているときだけ使う |
 | `ns_vad_grace_ms` | （無し） | ノイズ除去の余韻（0〜1000ms）。同上。無いときは何もかけず、SteamOS の値（23 / 500）のまま |
 
 - マイクの設定（エコー除去・ノイズ除去）は WirePlumber が `~/.local/state/wireplumber/sm-settings` に保存する（`--save`）。再起動しても最後に選んだ状態のまま
 - 別の設定ファイルを使うときは `--config パス`
-- 文言は `src/i18n.cpp` の表にまとめてある（日本語・英語）。ログや `--print` の出力は日本語のまま
+- 文言は `src/i18n.cpp` の表にまとめてある（日本語・英語・簡体字中国語）。ログや `--print` の出力は日本語のまま
 
 ## 守っていること
 
@@ -332,6 +332,6 @@ systemd から起動されたのに、すでに常駐がいるとき（手で起
 | `src/theme.*` | 色の定義と WCAG のコントラスト比の計算（`--contrast-report`） |
 | `src/vr_overlay.*` | OpenVR の接続、ダッシュボードのオーバーレイ、イベント、終了処理、`--probe` |
 | `src/vk_texture.*`・`src/draw.*`・`src/json.*` | Vulkan の画像、描画の部品、JSON（同じ作者の別のオーバーレイと共通） |
-| `src/i18n.*`・`src/config.*` | 文言の表（日本語・英語）、設定ファイル（言語とノイズ除去の強さ） |
+| `src/i18n.*`・`src/config.*` | 文言の表（日本語・英語・簡体字中国語）、設定ファイル（言語とノイズ除去の強さ） |
 | `contrib/` | `.desktop`・`.service`・アイコン・設定の例・`wireplumber/`（切り替えの仕組み） |
 | `install.sh` | ビルドとインストール・アンインストール |

@@ -1,16 +1,16 @@
-// 画面に出す文言の表（日本語・英語）。描画コードの中に文言を書かず、ここから引く。
+// 画面に出す文言の表（日本語・英語・簡体字中国語）。描画コードの中に文言を書かず、ここから引く。
 // ログや --print の出力は日本語のまま（ここには入れない）。
 #pragma once
 
 #include <string>
 
 /** 表示の言語。 */
-enum class Language { Ja, En };
+enum class Language { Ja, En, Sc };
 
 /**
  * Frame のシステム言語（設定ファイルに language が無いときの既定値）。
- * Steam の言語設定（~/.steam/registry.vdf の "language"、読むだけ）が日本語なら日本語、
- * 読めなければ LC_ALL / LC_MESSAGES / LANG を見て、どれでもなければ英語。結果は最初の 1 回だけ調べて覚えておく。
+ * Steam の言語設定（~/.steam/registry.vdf の "language"、読むだけ）が日本語なら日本語、簡体字中国語なら簡体字中国語。
+ * Steam の設定が読めなければ LC_ALL / LC_MESSAGES / LANG を見て、どれでもなければ英語。結果は最初の 1 回だけ調べて覚えておく。
  * @return 言語
  */
 Language systemLanguage();

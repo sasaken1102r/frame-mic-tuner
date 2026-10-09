@@ -22,7 +22,7 @@ https://github.com/user-attachments/assets/14b5e180-f417-4d90-85f5-6ba1dc573546
 - **Signal path**: shows whether an app is using the mic and which filters the sound actually goes through (mic → EQ → echo cancellation → noise suppression → apps), read from the live PipeWire links.
 - **Voice check**: records up to 10 seconds of the final sound that apps receive, keeps the last 5 recordings, and plays them back through the Frame's speakers or your earphones. Each recording shows the time, length, the setting it was made with and a small waveform.
 - **Updates**: an update card above the bottom row always shows the running version. It asks GitHub for a newer release about once a day (turn this off with `update_check: false` in the settings file), and **Check now** asks right away regardless. When a newer version is available the card gets an accent-colored border and an **Update** button, which downloads and installs it after you confirm once.
-- Japanese and English UI. Text and controls meet WCAG 2.x AA contrast.
+- Japanese, English, and Simplified Chinese UI. Text and controls meet WCAG 2.x AA contrast.
 
 Why this is needed: while an app uses the mic, SteamOS runs it through EQ, echo cancellation and noise suppression. Echo cancellation strongly reduces small sounds, and noise suppression silences anything that doesn't sound like a voice. With earphones there is no speaker sound to cancel, so turning echo cancellation off lets more of your voice through.
 
@@ -94,7 +94,7 @@ To remove it: `./install.sh --uninstall`, then restart the headset to get SteamO
    - SteamOS resets these two values whenever its audio restarts (for example after a reboot). The app saves your values and applies them again each time it starts, so they only stick while the app is running. Turn on **Start with SteamVR** if you want them all the time. Without the app, SteamOS's defaults are used.
 3. **Voice check**: press **Record**, say something, and press **Stop** (it stops by itself after 10 seconds). Switch the setting, record again, and use ▶ on each row to compare. Recording stops as soon as you close the panel.
 4. **Start with SteamVR** (bottom row): turn it on to have the app start automatically with SteamVR from now on. You can also enable it with `./install.sh --autostart`.
-5. **Language**: the panel starts in your Steam Frame's language (Japanese if Steam is set to Japanese, English otherwise). Change it with **日本語 / English** at the bottom left; your choice is saved.
+5. **Language**: the panel starts in your Steam Frame's language (Japanese for Japanese, Simplified Chinese for Simplified Chinese, English otherwise). Change it with **日本語 / English / 简体中文** at the bottom left; your choice is saved.
 6. **Quit**: press it twice, or hover over the Mic icon in the dashboard and choose Close.
 7. **Updates** (the card above the bottom row): it shows the running version, for example "Up to date (0.2.0)". **Check now** looks for a newer release right away (this works even if the automatic daily check is off).
    - When one is available, the card gets an accent-colored border and says "Version X is available". Press **Update**; the card asks "Update to X?" with **Cancel** and **Update** (the question goes away by itself after 3 seconds). Press **Update** again to start. The card then shows the progress ("Updating: Downloading", and so on).

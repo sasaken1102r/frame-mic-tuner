@@ -515,8 +515,9 @@ void MicPanel::setPointerForPreview(PanelHit hover, PanelHit pressed) {
     pressed_ = pressed;
 }
 
-void MicPanel::drawSegmented(const Pen& pen, double x, double y, double w, double h, const std::string labels[2],
-                             const PanelAction actions[2], int selected, double size, bool usable) {
+void MicPanel::drawSegmented(const Pen& pen, double x, double y, double w, double h, const std::string* labels,
+                             const PanelAction* actions, int count, int selected, double size, bool usable) {
+    if (count <= 0) return;
     cairo_t* cr = pen.cr;
     const double r = h / 2;
     // 地のピル。押せるときは枠（3:1 以上）で部品の形を見せる。押せないときは枠なし
@@ -526,9 +527,9 @@ void MicPanel::drawSegmented(const Pen& pen, double x, double y, double w, doubl
     if (usable) strokeRounded(pen, x, y, w, h, r, kBorder, 2);
 
     const double inset = 5;
-    const double half = (w - inset * 2) / 2;
-    for (int i = 0; i < 2; ++i) {
-        const double sx = x + inset + half * i;
+    const double segment = (w - inset * 2) / count;
+    for (int i = 0; i < count; ++i) {
+        const double sx = x + inset + segment * i;
         const double sy = y + inset;
         const double sh = h - inset * 2;
         const int pointer = usable ? pointerState(actions[i]) : 0;
@@ -536,21 +537,21 @@ void MicPanel::drawSegmented(const Pen& pen, double x, double y, double w, doubl
         if (isSelected) {
             // 選択中の側: アクセントの塗り（押している間は少し濃く）＋ ✓ ＋ 太字
             pen.color(pointer == 2 ? kAccentPressed : kAccent);
-            pen.roundedRect(sx, sy, half, sh, sh / 2);
+            pen.roundedRect(sx, sy, segment, sh, sh / 2);
             cairo_fill(cr);
         } else if (pointer > 0) {
             pen.color(kControlHover);
-            pen.roundedRect(sx, sy, half, sh, sh / 2);
+            pen.roundedRect(sx, sy, segment, sh, sh / 2);
             cairo_fill(cr);
         }
         const Color textColor = !usable ? kTextDisabled : (isSelected ? kOnAccent : kText);
         const double checkW = isSelected ? size * 0.9 : 0;
-        const double labelSize = fitSize(pen, labels[i], size, size * 0.7, half - 24 - checkW, isSelected);
+        const double labelSize = fitSize(pen, labels[i], size, size * 0.7, segment - 24 - checkW, isSelected);
         const double textW = pen.measure(labels[i], labelSize, isSelected) + checkW;
-        const double tx = sx + (half - textW) / 2;
+        const double tx = sx + (segment - textW) / 2;
         if (isSelected) drawCheck(cr, tx + checkW * 0.4, sy + sh / 2, size * 0.72, kOnAccent);
         pen.text(tx + checkW, centerBaseline(sy, sh, labelSize), labels[i], labelSize, textColor, isSelected);
-        addButton(actions[i], 0, sx, y, half, h, usable);
+        addButton(actions[i], 0, sx, y, segment, h, usable);
     }
 }
 
@@ -697,7 +698,8 @@ void MicPanel::drawModeCards(const Pen& pen, const UiText& t, const MicState& st
 void MicPanel::drawTabs(const Pen& pen, const UiText& t, PanelTab tab) {
     const std::string labels[2] = {t.tabQuick, t.fineTune};
     const PanelAction actions[2] = {PanelAction::TabQuick, PanelAction::TabFine};
-    drawSegmented(pen, kLeftX, kTabY, kLeftRight - kLeftX, kTabH, labels, actions, tab == PanelTab::Quick ? 0 : 1, 20);
+    drawSegmented(pen, kLeftX, kTabY, kLeftRight - kLeftX, kTabH, labels, actions, 2,
+                  tab == PanelTab::Quick ? 0 : 1, 20);
 }
 
 void MicPanel::drawToggleRows(const Pen& pen, const UiText& t, const MicState& state, double y) {
@@ -712,7 +714,8 @@ void MicPanel::drawToggleRows(const Pen& pen, const UiText& t, const MicState& s
                                         isEcho ? PanelAction::EchoOff : PanelAction::NsOff};
         const bool known = isEcho ? state.echoKnown : state.nsKnown;
         const bool value = isEcho ? state.echo : state.ns;
-        drawSegmented(pen, kSegmentX, top, kSegmentW, kSegmentH, labels, actions, known ? (value ? 0 : 1) : -1, 22);
+        drawSegmented(pen, kSegmentX, top, kSegmentW, kSegmentH, labels, actions, 2,
+                      known ? (value ? 0 : 1) : -1, 22);
         const std::string hint = isEcho ? t.echoHint : t.nsHint;
         const double hintX = kSegmentX + kSegmentW + 16;
         pen.text(hintX, centerBaseline(top, kSegmentH, 16), hint,
@@ -1269,10 +1272,11 @@ void MicPanel::drawFooter(const Pen& pen, const UiText& t, const MicState& state
     // 言語
     x += pen.text(x, centerBaseline(y, h, size), t.rowLanguage, size, kTextMuted) + 12;
     {
-        const std::string labels[2] = {"日本語", "English"};  // 言語の名前はその言語自身の書き方
-        const PanelAction actions[2] = {PanelAction::LanguageJa, PanelAction::LanguageEn};
-        drawSegmented(pen, x, y, 210, h, labels, actions, language == Language::Ja ? 0 : 1, size);
-        x += 210 + 36;
+        const std::string labels[3] = {"日本語", "English", "简体中文"};  // 言語の名前はその言語自身の書き方
+        const PanelAction actions[3] = {PanelAction::LanguageJa, PanelAction::LanguageEn, PanelAction::LanguageSc};
+        const int selected = language == Language::Ja ? 0 : (language == Language::En ? 1 : 2);
+        drawSegmented(pen, x, y, 320, h, labels, actions, 3, selected, size);
+        x += 320 + 36;
     }
     // SteamVR と一緒に起動
     const bool usable = state.autostart == Autostart::Enabled || state.autostart == Autostart::Disabled;
@@ -1283,7 +1287,7 @@ void MicPanel::drawFooter(const Pen& pen, const UiText& t, const MicState& state
         const std::string labels[2] = {t.on, t.off};
         const PanelAction actions[2] = {PanelAction::AutostartOn, PanelAction::AutostartOff};
         const int selected = state.autostart == Autostart::Enabled ? 0 : (state.autostart == Autostart::Disabled ? 1 : -1);
-        drawSegmented(pen, x, y, autostartW, h, labels, actions, selected, size, usable);
+        drawSegmented(pen, x, y, autostartW, h, labels, actions, 2, selected, size, usable);
     }
     // 終了（小さく控えめに。確認中は赤い塗り）
     {

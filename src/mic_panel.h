@@ -31,6 +31,7 @@ enum class PanelAction {
     Play,          ///< 履歴の再生・停止（index = 履歴の何件目か。新しい順）
     LanguageJa,
     LanguageEn,
+    LanguageSc,
     AutostartOn,   ///< SteamVR と一緒に起動: オン
     AutostartOff,  ///< SteamVR と一緒に起動: オフ
     Quit,          ///< 終了（2 回目の押下で確定したときだけ返る）
@@ -325,12 +326,13 @@ private:
      * @param h 高さ
      * @param labels 左右の文言
      * @param actions 左右の操作
+     * @param count 選択肢の数
      * @param selected 選択中の側（0 / 1、分からなければ -1）
      * @param size 文字の大きさ
      * @param usable 押せるか
      */
-    void drawSegmented(const Pen& pen, double x, double y, double w, double h, const std::string labels[2],
-                       const PanelAction actions[2], int selected, double size, bool usable = true);
+    void drawSegmented(const Pen& pen, double x, double y, double w, double h, const std::string* labels,
+                       const PanelAction* actions, int count, int selected, double size, bool usable = true);
 };
 
 /**
