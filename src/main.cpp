@@ -30,6 +30,8 @@
 #include <cstring>
 #include <ctime>
 #include <fstream>
+#include <functional>
+#include <map>
 #include <memory>
 #include <string>
 #include <thread>
@@ -101,6 +103,16 @@ struct Options {
     // 版の行のダミー（--dump-png 用）
     std::string fakeUpdate;         ///< unknown/uptodate/checking/available/manual/installing/installed/checkfailed/installfailed
     bool previewUpdateConfirm = false;  ///< 「更新する」の確認の表示にする（available と組み合わせる）
+    bool fakeEchoGiven = false;     ///< --fake-echo を付けた（付けなければ今の出口のプリセットに合わせる）
+    // 音の出口・マイクのダミー（--dump-png 用）
+    std::string fakeOutput = "speaker";  ///< 今の出口: speaker（Frame のスピーカー）/ earphones（AB13X）
+    int fakePastOutputs = 3;        ///< 前に使った（いまはつながっていない）出口の数（多いと一覧がスクロールする）
+    bool fakeSwitched = false;      ///< 自動で切り替えた知らせ（元に戻す）を出す
+    bool fakeExternalMic = false;   ///< 外付けのマイク（AB13X）を使っている
+    std::string fakeViewing;        ///< 設定を表示する出口: 空 = 今の出口、ab13x、past（前に使った出口の 1 つ目）
+    std::string view;               ///< settings / apps
+    std::string overlay;            ///< output / mic
+    std::string previewScroll;      ///< 重ねた画面の一覧のスクロール（px か end）
 };
 
 /**
@@ -181,7 +193,8 @@ void printUsage() {
         "      --fake-loading    まだ読んでいない状態\n"
         "      --fake-muted      既定のマイクがミュートされている（ミュート中のバッジと帯）\n"
         "      --fake-autostart on|off|missing|unknown  自動起動の状態（missing = ユニットファイルが無い）\n"
-        "      --fake-error read|not-installed|links|write|write-echo|write-ns|write-mute|autostart  赤い失敗の表示\n"
+        "      --fake-error read|not-installed|links|write|write-echo|write-ns|write-mute|write-mute-on|\n"
+        "                   write-output|write-input|autostart  赤い失敗の表示（write-mute は解除の失敗）\n"
         "      --fake-recording  録音中（メーター・経過）の見た目\n"
         "      --fake-history N  ダミーの履歴を N 件（0〜5）\n"
         "      --fake-playing I  履歴の I 件目（0 が最新）を再生中にする\n"
@@ -189,9 +202,17 @@ void printUsage() {
         "      --fake-update STATE  版の行のダミー（unknown/uptodate/checking/available/manual/installing/\n"
         "                        installed/checkfailed/installfailed）\n"
         "      --preview-update-confirm  「更新する」を確認の表示にする（--fake-update available と組み合わせる）\n"
-        "      --preview-pressed earphone|speaker|record  押している間の見た目\n"
+        "      --preview-pressed earphone|speaker|record|mute|apps  押している間の見た目\n"
         "      --fake-ns-vad N / --fake-ns-grace N  ダミーのノイズ除去の強さ（既定 23 / 500）\n"
         "      --preview-drag-vad N / --preview-drag-grace N  そのバーを N までドラッグしている見た目\n"
+        "      --fake-output speaker|earphones  今の音の出口（Frame のスピーカー / AB13X USB Audio）\n"
+        "      --fake-past-outputs N  前に使った（いまはつながっていない）出口の数（既定 3。多いと一覧がスクロールする）\n"
+        "      --fake-switched   出口をつないで自動で切り替えた知らせ（元に戻す）を出す\n"
+        "      --fake-external-mic  外付けのマイク（AB13X）を使っている\n"
+        "      --fake-viewing ab13x|past  今の出口ではなく、その出口の設定を表示する\n"
+        "      --view settings|apps  画面（マイクの設定 / アプリと更新）\n"
+        "      --overlay output|mic  重ねて出す画面（音の出口を選ぶ / 使うマイク）\n"
+        "      --preview-scroll PX|end  重ねた画面の一覧のスクロール\n"
         "  --test-record [S]     OpenVR なしで、既定の入力から S 秒（既定 3）録音 → ピークと長さを表示 → 既定の出力で再生\n"
         "                        （録音中と後に pw-metadata -n filters も表示する。音声はメモリの中だけ）\n"
         "  --contrast-report     画面の文字色・部品の色と背景の組み合わせごとに、WCAG のコントラスト比と合否を出す\n"
@@ -287,7 +308,45 @@ bool parseOptions(int argc, char** argv, Options& options) {
             options.fake = true;
         } else if (arg == "--fake-echo" && hasNext) {
             if (!parseOnOff(argv[++i], options.fakeEcho)) return false;
+            options.fakeEchoGiven = true;
             options.fake = true;
+        } else if (arg == "--fake-output" && hasNext) {
+            options.fakeOutput = argv[++i];
+            if (options.fakeOutput != "speaker" && options.fakeOutput != "earphones") {
+                std::fprintf(stderr, "--fake-output は speaker か earphones です: %s\n", options.fakeOutput.c_str());
+                return false;
+            }
+            options.fake = true;
+        } else if (arg == "--fake-past-outputs" && hasNext) {
+            options.fakePastOutputs = std::max(0, std::min(20, std::atoi(argv[++i])));
+            options.fake = true;
+        } else if (arg == "--fake-switched") {
+            options.fakeSwitched = true;
+            options.fake = true;
+        } else if (arg == "--fake-external-mic") {
+            options.fakeExternalMic = true;
+            options.fake = true;
+        } else if (arg == "--fake-viewing" && hasNext) {
+            options.fakeViewing = argv[++i];
+            if (options.fakeViewing != "ab13x" && options.fakeViewing != "past") {
+                std::fprintf(stderr, "--fake-viewing は ab13x か past です: %s\n", options.fakeViewing.c_str());
+                return false;
+            }
+            options.fake = true;
+        } else if (arg == "--view" && hasNext) {
+            options.view = argv[++i];
+            if (options.view != "settings" && options.view != "apps") {
+                std::fprintf(stderr, "--view は settings か apps です: %s\n", options.view.c_str());
+                return false;
+            }
+        } else if (arg == "--overlay" && hasNext) {
+            options.overlay = argv[++i];
+            if (options.overlay != "output" && options.overlay != "mic") {
+                std::fprintf(stderr, "--overlay は output か mic です: %s\n", options.overlay.c_str());
+                return false;
+            }
+        } else if (arg == "--preview-scroll" && hasNext) {
+            options.previewScroll = argv[++i];
         } else if (arg == "--fake-ns" && hasNext) {
             if (!parseOnOff(argv[++i], options.fakeNs)) return false;
             options.fake = true;
@@ -331,10 +390,18 @@ bool parseOptions(int argc, char** argv, Options& options) {
                 options.fakeError = MicError::WriteNs;
             } else if (kind == "write-mute") {
                 options.fakeError = MicError::WriteMute;
+            } else if (kind == "write-mute-on") {
+                options.fakeError = MicError::WriteMuteOn;
+            } else if (kind == "write-output") {
+                options.fakeError = MicError::WriteOutput;
+            } else if (kind == "write-input") {
+                options.fakeError = MicError::WriteInput;
             } else if (kind == "autostart") {
                 options.fakeError = MicError::WriteAutostart;
             } else {
-                std::fprintf(stderr, "--fake-error は read / not-installed / links / write / write-echo / write-ns / write-mute / autostart です: %s\n",
+                std::fprintf(stderr,
+                             "--fake-error は read / not-installed / links / write / write-echo / write-ns / write-mute / "
+                             "write-mute-on / write-output / write-input / autostart です: %s\n",
                              kind.c_str());
                 return false;
             }
@@ -575,6 +642,77 @@ int runPrint(const Options& options) {
     return (state.readError != MicError::None || writeError != MicError::None) ? 1 : 0;
 }
 
+// ダミーの音の出口とマイク（--dump-png・--self-test。名前は Frame で見た AB13X と、よくある機器の例）
+constexpr const char* kFakeAb13xOut = "alsa_output.usb-Generic_AB13X_USB_Audio_202405280846-00.analog-stereo";
+constexpr const char* kFakeAb13xIn = "alsa_input.usb-Generic_AB13X_USB_Audio_202405280846-00.analog-stereo";
+constexpr const char* kFakeBluetooth = "bluez_output.AA_BB_CC_DD_EE_FF";
+
+/**
+ * ダミーの音の出口とマイクの一覧（Frame のスピーカー・AB13X・Bluetooth のイヤホンがつながっている）。
+ * @param earphones 今の出口を AB13X にするか（false なら Frame のスピーカー）
+ * @param externalMic 今のマイクを AB13X にするか
+ * @return 一覧
+ */
+AudioDevices fakeDevices(bool earphones, bool externalMic) {
+    AudioDevices d;
+    d.known = d.defaultsKnown = true;
+    d.outputs = {{kBuiltinSpeakerKey, "alsa_loopback_device.stereo.alsa_output.platform-sound.HiFi__Speaker__sink", 126,
+                  "Built-in Audio", true},
+                 {kFakeAb13xOut, kFakeAb13xOut, 65, "AB13X USB Audio", false},
+                 {kFakeBluetooth, "bluez_output.AA_BB_CC_DD_EE_FF.1", 141, "WH-1000XM4", false}};
+    d.inputs = {{kBuiltinMicKey, "alsa_loopback_device.alsa_input.platform-sound.HiFi__Mic__source", 69, "Built-in Audio", true},
+                {kFakeAb13xIn, kFakeAb13xIn, 114, "AB13X USB Audio", false}};
+    d.defaultOutputKey = earphones ? kFakeAb13xOut : kBuiltinSpeakerKey;
+    d.defaultSinkName = d.findOutput(d.defaultOutputKey)->nodeName;
+    d.defaultInputKey = externalMic ? kFakeAb13xIn : kBuiltinMicKey;
+    d.defaultSourceName = d.findInput(d.defaultInputKey)->nodeName;
+    return d;
+}
+
+/**
+ * ダミーの出口ごとの設定（つながっている 3 つと、前に使った出口 past 個）。
+ * @param past 前に使った出口の数
+ * @return 出口ごとの設定
+ */
+std::map<std::string, OutputProfile> fakeProfiles(int past) {
+    std::map<std::string, OutputProfile> outputs;
+    OutputProfile speaker = firstProfile(kBuiltinSpeakerKey, "Built-in Audio");
+    speaker.lastUsed = "2026-10-10";
+    outputs[kBuiltinSpeakerKey] = speaker;
+    OutputProfile ab13x = firstProfile(kFakeAb13xOut, "AB13X USB Audio");
+    ab13x.lastUsed = "2026-10-10";
+    outputs[kFakeAb13xOut] = ab13x;
+    OutputProfile bluetooth = firstProfile(kFakeBluetooth, "WH-1000XM4");
+    bluetooth.ns = true;
+    bluetooth.lastUsed = "2026-10-09";
+    outputs[kFakeBluetooth] = bluetooth;
+    // 前に使った出口（いまはつながっていない）。日付の新しい順に並ぶ
+    const struct {
+        const char* key;
+        const char* name;
+        const char* date;
+        bool ns;
+    } examples[] = {
+        {"bluez_output.11_22_33_44_55_66", "Galaxy Buds2 Pro", "2026-10-08", false},
+        {"alsa_output.usb-Logitech_PRO_X_Wireless_Gaming_Headset-00.analog-stereo", "PRO X Wireless Gaming Headset",
+         "2026-09-30", true},
+        {"alsa_output.usb-Apple_USB-C_to_3.5mm_Headphone_Jack_Adapter-00.analog-stereo",
+         "USB-C to 3.5mm Headphone Jack Adapter", "2026-09-12", false},
+        {"bluez_output.77_88_99_AA_BB_CC", "AirPods Pro", "2026-09-03", false},
+        {"bluez_output.DD_EE_FF_00_11_22", "Soundcore Liberty 4", "2026-08-21", true},
+        {"alsa_output.usb-Creative_Sound_BlasterX_G1-00.analog-stereo", "Sound BlasterX G1", "2026-08-02", false},
+    };
+    for (int i = 0; i < past; ++i) {
+        const auto& e = examples[i % 6];
+        const std::string key = i < 6 ? std::string(e.key) : std::string(e.key) + "_" + std::to_string(i);
+        OutputProfile p = firstProfile(key, i < 6 ? e.name : std::string(e.name) + " " + std::to_string(i / 6 + 1));
+        p.ns = e.ns;
+        p.lastUsed = e.date;
+        outputs[key] = p;
+    }
+    return outputs;
+}
+
 /**
  * 見た目の確認用のダミーの状態を作る。
  * @param options コマンドライン（--fake-*）
@@ -583,11 +721,14 @@ int runPrint(const Options& options) {
 MicState fakeState(const Options& options) {
     MicState state;
     if (options.fakeLoading) return state;
+    const bool earphones = options.fakeOutput == "earphones";
     state.loaded = true;
     state.echoKnown = true;
-    state.echo = options.fakeEcho;
+    // --fake-echo を付けなければ、今の出口のプリセット（スピーカー = オン、イヤホン = オフ）に合わせる
+    state.echo = options.fakeEchoGiven ? options.fakeEcho : !earphones;
     state.nsKnown = true;
     state.ns = options.fakeNs;
+    state.devices = fakeDevices(earphones, options.fakeExternalMic);
     state.linksKnown = true;
     state.inUse = !options.fakeIdle;
     state.muteKnown = true;
@@ -607,7 +748,8 @@ MicState fakeState(const Options& options) {
     state.nsParams.grace = options.fakeNsGrace;
     const MicError error = options.fakeError;
     if (error == MicError::WriteSettings || error == MicError::WriteAutostart || error == MicError::WriteEcho ||
-        error == MicError::WriteNs || error == MicError::WriteMute) {
+        error == MicError::WriteNs || error == MicError::WriteMute || error == MicError::WriteMuteOn ||
+        error == MicError::WriteOutput || error == MicError::WriteInput) {
         state.writeError = error;
     } else if (error != MicError::None) {
         state.readError = error;
@@ -635,10 +777,12 @@ VoiceView fakeVoiceView(const Options& options) {
     view.recordSec = 3.4;
     view.levelDb = -14.2f;
     view.error = options.fakeVoiceError;
-    // 新しい順。録ったときの設定をいろいろにして、聞き比べの様子にする
-    const double lengths[] = {3.2, 5.0, 2.4, 8.1, 10.0};
-    const bool echoes[] = {true, false, true, false, true};
-    const bool nss[] = {false, false, true, true, false};
+    // 新しい順。録ったときの出口・マイク・設定をいろいろにして、聞き比べの様子にする（見本と同じ並び）
+    const double lengths[] = {3.2, 5.0, 4.1, 2.4, 8.1};
+    const bool echoes[] = {false, true, false, true, true};
+    const bool nss[] = {false, false, false, true, false};
+    const bool speakers[] = {false, true, false, true, true};
+    const bool externals[] = {false, false, true, false, false};
     const std::time_t now = std::time(nullptr);
     for (int i = 0; i < options.fakeHistory; ++i) {
         auto clip = std::make_shared<VoiceClip>();
@@ -647,9 +791,14 @@ VoiceView fakeVoiceView(const Options& options) {
         clip->echoKnown = clip->nsKnown = true;
         clip->echo = echoes[i];
         clip->ns = nss[i];
+        clip->outputKnown = true;
+        clip->outputSpeaker = speakers[i];
+        clip->outputName = speakers[i] ? "Built-in Audio" : "AB13X USB Audio";
+        clip->externalMic = externals[i];
+        clip->micName = "AB13X USB Audio";
         clip->nsParamsKnown = true;
-        clip->nsVad = i == 2 ? 10.0 : kNsVadDefault;      // 3 件目は強さを変えて録った例
-        clip->nsGrace = i == 2 ? 800.0 : kNsGraceDefault;
+        clip->nsVad = i == 3 ? 10.0 : kNsVadDefault;      // 4 件目は強さを変えて録った例
+        clip->nsGrace = i == 3 ? 800.0 : kNsGraceDefault;
         clip->samples.assign(static_cast<size_t>(lengths[i] * kVoiceRate), 0);
         clip->wave.resize(kWaveBins);
         for (int b = 0; b < kWaveBins; ++b) {
@@ -726,19 +875,64 @@ int runDumpPng(const Options& options) {
     FontSet fonts;
     fonts.load(kFontPath, kBoldFontPath);
     if (!options.pngPath.empty()) {
-        const MicState state = options.fake ? fakeState(options) : readMicState();
-        MicPanel panel(fonts);
-        if (options.previewQuit) panel.armQuitForPreview();
-        if (!options.previewPressed.empty()) {
-            PanelHit hit;
-            if (options.previewPressed == "earphone") hit.action = PanelAction::Earphone;
-            if (options.previewPressed == "speaker") hit.action = PanelAction::Speaker;
-            if (options.previewPressed == "record") hit.action = PanelAction::Record;
-            panel.setPointerForPreview(hit, hit);
+        // 設定ファイルは読むだけ（ダミーのときは出口ごとの設定もダミーにする。どちらも書かない）
+        PanelModel model;
+        if (options.fake) {
+            model.state = fakeState(options);
+            config.outputs = fakeProfiles(options.fakePastOutputs);
+            config.outputsSaved = true;
+            if (model.state.loaded) {
+                // 今の出口の覚えた設定は、今かかっている値と同じにしておく（自動でかけたあとの状態）
+                OutputProfile& active = config.outputs[model.state.devices.defaultOutputKey];
+                active.echo = model.state.echo;
+                active.ns = model.state.ns;
+                active.nsVad = model.state.nsParams.vad;
+                active.nsGrace = model.state.nsParams.grace;
+                model.activeOutputKey = model.state.devices.defaultOutputKey;
+            }
+        } else {
+            model.state = readMicState();
+            model.state.devices = readAudioDevices();
+            model.activeOutputKey = model.state.devices.defaultOutputKey;
         }
+        model.voice = fakeVoiceView(options);
+        model.update = fakeUpdateStatus(options);
+        if (options.fakeSwitched) {
+            model.switchNotice = true;
+            model.switchKey = model.activeOutputKey;
+        }
+        MicPanel panel(fonts);
+        panel.showForPreview(options.view == "apps" ? PanelView::Apps : PanelView::Settings,
+                             options.overlay == "output" ? PanelOverlay::OutputPicker
+                             : options.overlay == "mic"  ? PanelOverlay::MicPicker
+                                                         : PanelOverlay::None);
+        if (options.fakeViewing == "ab13x") panel.setViewedOutputForPreview(kFakeAb13xOut);
+        if (options.fakeViewing == "past") panel.setViewedOutputForPreview("bluez_output.11_22_33_44_55_66");
+        if (!options.previewScroll.empty()) {
+            panel.setListScrollForPreview(options.previewScroll == "end" ? 1e9 : std::atof(options.previewScroll.c_str()));
+        }
+        if (options.previewQuit) panel.armQuitForPreview();
         if (options.previewDrag != PanelAction::None) panel.setDragForPreview(options.previewDrag, options.previewDragValue);
         if (options.previewUpdateConfirm) panel.armUpdateForPreview();
-        panel.render(config, state, fakeVoiceView(options), fakeUpdateStatus(options));
+        panel.render(config, model);
+        if (!options.previewPressed.empty()) {
+            // 押している見た目: 1 回描いてボタンの位置を知り、そこにポインターを置いて描き直す
+            const std::string& p = options.previewPressed;
+            const PanelAction action = p == "earphone" ? PanelAction::Earphone
+                                       : p == "speaker" ? PanelAction::Speaker
+                                       : p == "record"  ? PanelAction::Record
+                                       : p == "mute"    ? PanelAction::MuteToggle
+                                       : p == "apps"    ? PanelAction::ShowApps
+                                                        : PanelAction::None;
+            double x = 0.0;
+            double y = 0.0;
+            if (panel.buttonCenter(action, x, y)) {
+                panel.setPointerForPreview(x, y, true);
+                panel.render(config, model);
+            } else {
+                std::fprintf(stderr, "--preview-pressed のボタンが見つかりません: %s\n", p.c_str());
+            }
+        }
         if (!panel.writePng(options.pngPath)) {
             std::fprintf(stderr, "PNG を書き出せませんでした: %s\n", options.pngPath.c_str());
             return 1;
@@ -843,15 +1037,14 @@ int runTestRecord(const Options& options) {
  * バーのドラッグを終わらせ、最後の値を返す（離したとき・タブを切り替えたとき・パネルを閉じたとき）。
  * 値を送って保存するのは呼び出し側。
  * @param panel パネル
- * @param state 今のマイクの状態（ドラッグしていないほうのバーの値に使う）
  * @param vad 判定の厳しさ（%）の書き込み先
  * @param grace 余韻（ms）の書き込み先
  * @return ドラッグしていたら true
  */
-bool finishDrag(MicPanel& panel, const MicState& state, double& vad, double& grace) {
+bool finishDrag(MicPanel& panel, double& vad, double& grace) {
     if (!panel.dragging()) return false;
-    panel.displayedNsValues(state, vad, grace);  // ドラッグ中のバーはその値、もう 1 本は今の値
-    panel.pointerLeave();                         // ドラッグと押している見た目を終わらせる
+    panel.displayedNsValues(vad, grace);  // ドラッグ中のバーはその値、もう 1 本は表示していた値
+    panel.endDrag();                      // ドラッグと押している見た目を終わらせる
     return true;
 }
 
@@ -970,21 +1163,48 @@ int runSelfTest() {
         expect("設定ファイル: タブが無いときは「かんたん」", fresh.tab == PanelTab::Quick);
     }
 
+    // ---- パネル（OpenVR なしで描いて、当たり判定を試す） ----
+    FontSet fonts;
+    fonts.load(kFontPath, kBoldFontPath);
+
+    // 文言の表: 3 つの言語とも、どのフィールドも空でない（表の並びの数の食い違いに気づく）
+    for (const Language language : {Language::Ja, Language::En, Language::Sc}) {
+        const UiText& t = uiText(language);
+        const char* const* field = reinterpret_cast<const char* const*>(&t);
+        bool filled = true;
+        for (size_t i = 0; i < sizeof(UiText) / sizeof(const char*); ++i) {
+            filled = filled && field[i] != nullptr && field[i][0] != '\0';
+        }
+        const std::string what = std::string("文言の表: ") + languageCode(language) + " のどのフィールドも空でない";
+        expect(what.c_str(), filled);
+    }
+
+    /**
+     * 読み込んだあとの、ふつうの状態（Frame のスピーカー・内蔵マイク・使用中・ノイズ除去の強さ 23%/500ms）。
+     */
+    const auto loadedModel = [](bool external) {
+        PanelModel model;
+        MicState& s = model.state;
+        s.loaded = s.echoKnown = s.nsKnown = s.linksKnown = s.inUse = s.muteKnown = true;
+        s.echo = true;
+        s.nsParams.nodeKnown = s.nsParams.vadKnown = s.nsParams.graceKnown = true;
+        s.nsParams.nodeId = 53;
+        s.nsParams.vad = kNsVadDefault;
+        s.nsParams.grace = kNsGraceDefault;
+        s.devices = fakeDevices(false, external);
+        model.activeOutputKey = s.devices.defaultOutputKey;
+        return model;
+    };
+
     // バーのドラッグ: 細かく調整のタブで判定の厳しさのバーをつかんで動かし、タブを切り替える（= ドラッグを終わらせる）と、
     // 最後の値が返り、ドラッグは終わっている
     {
-        FontSet fonts;
-        fonts.load(kFontPath, kBoldFontPath);
         MicPanel panel(fonts);
         Config config;
         config.tab = PanelTab::Fine;
-        MicState state;
-        state.loaded = state.echoKnown = state.nsKnown = state.ns = true;
-        state.nsParams.nodeKnown = state.nsParams.vadKnown = state.nsParams.graceKnown = true;
-        state.nsParams.nodeId = 53;
-        state.nsParams.vad = kNsVadDefault;
-        state.nsParams.grace = kNsGraceDefault;
-        panel.render(config, state, VoiceView());
+        PanelModel model = loadedModel(false);
+        model.state.ns = true;
+        panel.render(config, model);
         double x = 0.0;
         double y = 0.0;
         const bool found = panel.trackCenter(PanelAction::NsVadSlider, x, y);
@@ -993,96 +1213,146 @@ int runSelfTest() {
         const bool draggingBefore = panel.dragging();
         double vad = 0.0;
         double grace = 0.0;
-        const bool finished = finishDrag(panel, state, vad, grace);
+        const bool finished = finishDrag(panel, vad, grace);
         expect("ドラッグ: 溝を押すとドラッグが始まる", found && hit.action == PanelAction::NsVadSlider && draggingBefore);
         expect("ドラッグ: タブの切り替えで終わらせると、最後の値（右へ動かした 60% 以上）と今の余韻が返る",
                finished && vad >= 60 && vad <= kNsVadMax && grace == kNsGraceDefault);
         expect("ドラッグ: 終わらせたあとはドラッグしていない", !panel.dragging());
         double again = 0.0;
-        expect("ドラッグ: ドラッグしていなければ何も返さない", !finishDrag(panel, state, again, again));
+        expect("ドラッグ: ドラッグしていなければ何も返さない", !finishDrag(panel, again, again));
         config.tab = PanelTab::Quick;
-        panel.render(config, state, VoiceView());
+        panel.render(config, model);
         double qx = 0.0;
         double qy = 0.0;
         expect("タブ: かんたんのタブではバーを描かない", !panel.trackCenter(PanelAction::NsVadSlider, qx, qy));
     }
 
-    // 更新の帯: 「更新する」の 1 回目は確認の表示（「やめる」が出る）だけ、「やめる」で元に戻る。確認中の 2 回目で更新する
+    // アプリと更新: 「更新する」の 1 回目は確認の表示（「やめる」が出る）だけ、「やめる」で元に戻る。確認中に「更新する」で更新する
     {
-        FontSet fonts;
-        fonts.load(kFontPath, kBoldFontPath);
         MicPanel panel(fonts);
         const Config config;
-        const MicState state;
-        frame_updater::UpdateStatus update;
-        update.state = frame_updater::UpdateState::Available;
-        update.current = "0.2.0";
-        update.latest = "9.9.9";
-        update.installable = true;
+        PanelModel model = loadedModel(false);
+        model.update.state = frame_updater::UpdateState::Available;
+        model.update.current = "0.2.0";
+        model.update.latest = "9.9.9";
+        model.update.installable = true;
+        panel.showForPreview(PanelView::Apps, PanelOverlay::None);
         double x = 0.0;
         double y = 0.0;
-        panel.render(config, state, VoiceView(), update);
-        const bool noCancelFirst = !panel.buttonCenter(PanelAction::UpdateCancel, x, y);
+        panel.render(config, model);
+        const bool noConfirmFirst = !panel.buttonCenter(PanelAction::UpdateConfirmNo, x, y);
         panel.buttonCenter(PanelAction::UpdateInstall, x, y);
         const PanelHit first = panel.pointerDown(x, y, 0.0);
         panel.pointerUp();
-        panel.render(config, state, VoiceView(), update);
-        const bool cancelShown = panel.buttonCenter(PanelAction::UpdateCancel, x, y);
+        panel.render(config, model);
+        const bool confirmShown = panel.buttonCenter(PanelAction::UpdateConfirmNo, x, y);
         const PanelHit cancel = panel.pointerDown(x, y, 0.1);
         panel.pointerUp();
-        panel.render(config, state, VoiceView(), update);
-        const bool cancelGone = !panel.buttonCenter(PanelAction::UpdateCancel, x, y);
-        expect("更新の帯: 「更新する」の 1 回目は何も返さず「やめる」を出す",
-               noCancelFirst && first.action == PanelAction::None && cancelShown);
-        expect("更新の帯: 「やめる」を押すと確認が消える", cancel.action == PanelAction::UpdateCancel && cancelGone);
-        panel.buttonCenter(PanelAction::UpdateInstall, x, y);
+        panel.render(config, model);
+        const bool confirmGone = !panel.buttonCenter(PanelAction::UpdateConfirmNo, x, y) &&
+                                 panel.buttonCenter(PanelAction::UpdateInstall, x, y);
+        expect("更新: 「更新する」の 1 回目は何も返さず「やめる」を出す",
+               noConfirmFirst && first.action == PanelAction::None && confirmShown);
+        expect("更新: 「やめる」を押すと何も返さず確認が消える", cancel.action == PanelAction::None && confirmGone);
         panel.pointerDown(x, y, 0.2);
         panel.pointerUp();
-        panel.render(config, state, VoiceView(), update);
-        panel.buttonCenter(PanelAction::UpdateInstall, x, y);
+        panel.render(config, model);
+        panel.buttonCenter(PanelAction::UpdateConfirmYes, x, y);
         const PanelHit second = panel.pointerDown(x, y, 0.3);
-        expect("更新の帯: 確認中にもう一度「更新する」を押すと更新する", second.action == PanelAction::UpdateInstall);
+        expect("更新: 確認の「更新する」で UpdateConfirmYes を返す", second.action == PanelAction::UpdateConfirmYes);
     }
 
-    // ミュート: ミュート中は更新の帯の場所に「ミュートを解除」を出し（両方のタブ）、押すと Unmute が返る。
-    // ミュートでないとき・読めないときは出さない
+    // ミュート: 「ミュートする」「ミュートを解除」は同じ位置・同じ幅（3 言語とも）。確認なしの 1 回で返す。読めないときは押せない
     {
-        FontSet fonts;
-        fonts.load(kFontPath, kBoldFontPath);
         MicPanel panel(fonts);
         Config config;
-        MicState state;
-        state.loaded = state.linksKnown = true;
-        state.muteKnown = state.muted = true;
+        PanelModel model = loadedModel(false);
+        bool same = true;
+        for (const Language language : {Language::Ja, Language::En, Language::Sc}) {
+            config.language = language;
+            for (const bool muted : {false, true}) {
+                model.state.muted = muted;
+                panel.render(config, model);
+                const frame_ui::Rect r = panel.buttonRect(PanelAction::MuteToggle);
+                same = same && r.x == 324 && r.y == 22 && r.w == 220 && r.h == 56;
+            }
+        }
+        expect("ミュート: ボタンはミュートしてもしなくても、3 言語とも同じ位置・幅（324, 22, 220×56）", same);
         double x = 0.0;
         double y = 0.0;
-        bool shownBoth = true;
-        for (const PanelTab tab : {PanelTab::Quick, PanelTab::Fine}) {
-            config.tab = tab;
-            panel.render(config, state, VoiceView());
-            shownBoth = shownBoth && panel.buttonCenter(PanelAction::Unmute, x, y) &&
-                        !panel.buttonCenter(PanelAction::UpdateCheckNow, x, y);
-        }
-        expect("ミュート: ミュート中は両方のタブで「ミュートを解除」を出す（更新の帯の代わり）", shownBoth);
-        panel.buttonCenter(PanelAction::Unmute, x, y);
+        panel.buttonCenter(PanelAction::MuteToggle, x, y);
         const PanelHit hit = panel.pointerDown(x, y, 0.0);
         panel.pointerUp();
-        expect("ミュート: 「ミュートを解除」は確認なしの 1 回で Unmute を返す", hit.action == PanelAction::Unmute);
-        state.muted = false;
-        panel.render(config, state, VoiceView());
-        const bool hiddenWhenOff = !panel.buttonCenter(PanelAction::Unmute, x, y) &&
-                                   panel.buttonCenter(PanelAction::UpdateCheckNow, x, y);
-        state.muteKnown = false;
-        state.muted = true;  // 読めていない値は使わない
-        panel.render(config, state, VoiceView());
-        const bool hiddenWhenUnknown = !panel.buttonCenter(PanelAction::Unmute, x, y);
-        expect("ミュート: ミュートでないとき・読めないときは出さず、更新の帯のまま", hiddenWhenOff && hiddenWhenUnknown);
-        MicState other = state;
+        expect("ミュート: 確認なしの 1 回で MuteToggle を返す", hit.action == PanelAction::MuteToggle);
+        model.state.muteKnown = false;
+        panel.render(config, model);
+        expect("ミュート: 読めていない間は押せない", panel.buttonRect(PanelAction::MuteToggle).w == 0);
+        MicState other = model.state;
         other.muteKnown = true;
         MicState unmuted = other;
-        unmuted.muted = false;
+        unmuted.muted = !other.muted;
         expect("ミュート: 読めたかどうか・ミュートかどうかが変わると描き直す",
-               !sameMicState(state, other) && !sameMicState(other, unmuted) && sameMicState(other, other));
+               !sameMicState(model.state, other) && !sameMicState(other, unmuted) && sameMicState(other, other));
+    }
+
+    // 音の出口を選ぶ画面: 後ろは押せない。行は離したときに返す（ドラッグならスクロールで、何も返さない）
+    {
+        MicPanel panel(fonts);
+        Config config;
+        config.outputs = fakeProfiles(6);
+        config.outputsSaved = true;
+        const PanelModel model = loadedModel(false);
+        panel.showForPreview(PanelView::Settings, PanelOverlay::OutputPicker);
+        panel.render(config, model);
+        double x = 0.0;
+        double y = 0.0;
+        expect("出口の一覧: 重ねている間は後ろのボタン（タブ）を押せない", !panel.buttonCenter(PanelAction::TabQuick, x, y));
+        expect("出口の一覧: つながっている出口に「ここから音を出す」、今の出口には出さない、前の出口に「忘れる」",
+               panel.buttonCenter(PanelAction::OutputUse, x, y, kFakeAb13xOut) &&
+                   !panel.buttonCenter(PanelAction::OutputUse, x, y, kBuiltinSpeakerKey) &&
+                   panel.buttonCenter(PanelAction::OutputForget, x, y, "bluez_output.11_22_33_44_55_66"));
+        const bool scrolled = panel.scroll(-1.0);  // スティックを下へ
+        panel.render(config, model);
+        const bool back = panel.scroll(100.0);       // いちばん上へ戻す
+        panel.render(config, model);
+        expect("出口の一覧: 入りきらないときはスティックでスクロールできる", scrolled && back && !panel.scroll(1.0));
+        panel.buttonCenter(PanelAction::OutputView, x, y, kFakeAb13xOut);
+        const PanelHit down = panel.pointerDown(x, y, 0.0);
+        panel.pointerMove(x, y - 60);  // 押したまま上へ = 下へスクロール
+        const PanelHit dragged = panel.pointerUp();
+        expect("出口の一覧: 行を押したままドラッグするとスクロールで、行は選ばない",
+               down.action == PanelAction::None && dragged.action == PanelAction::None &&
+                   panel.overlay() == PanelOverlay::OutputPicker);
+        panel.setListScrollForPreview(0);
+        panel.render(config, model);
+        panel.buttonCenter(PanelAction::OutputView, x, y, kFakeAb13xOut);
+        panel.pointerDown(x, y, 1.0);
+        const PanelHit picked = panel.pointerUp();
+        panel.render(config, model);
+        expect("出口の一覧: 行を押して離すと、その出口の設定を表示して閉じる",
+               picked.action == PanelAction::OutputView && picked.key == kFakeAb13xOut &&
+                   panel.overlay() == PanelOverlay::None && panel.viewedOutputKey() == kFakeAb13xOut &&
+                   !panel.viewingActive());
+        panel.resetView();
+        panel.render(config, model);
+        expect("出口の一覧: パネルを閉じたら今の出口の表示に戻る",
+               panel.viewedOutputKey() == kBuiltinSpeakerKey && panel.viewingActive());
+    }
+
+    // 外付けのマイク: かんたん・細かく調整は使えず、「Frame 内蔵マイクに戻す」を出す。自動で切り替えた知らせは「元に戻す」を出す
+    {
+        MicPanel panel(fonts);
+        Config config;
+        panel.render(config, loadedModel(true));
+        double x = 0.0;
+        double y = 0.0;
+        expect("外付けのマイク: タブは押せず、「Frame 内蔵マイクに戻す」を出す",
+               !panel.buttonCenter(PanelAction::TabQuick, x, y) && panel.buttonCenter(PanelAction::UseBuiltinMic, x, y));
+        PanelModel switched = loadedModel(false);
+        switched.switchNotice = true;
+        switched.switchKey = switched.activeOutputKey;
+        panel.render(config, switched);
+        expect("知らせ: 自動で切り替えたあとは「元に戻す」を出す", panel.buttonCenter(PanelAction::UndoSwitch, x, y));
     }
 
     // 音の出口: 一覧の読み取り（Frame で取った pw-dump・pw-metadata）・キー・出口ごとの設定のかけ方・設定ファイル
@@ -1178,94 +1448,6 @@ bool startedByOwnService() {
 }
 
 /**
- * パネルのボタンの操作を実行する（マイク・自動起動はワーカーに頼み、言語はここで保存し、録音・再生は声のチェックへ）。
- * @param hit 押されたボタン
- * @param config 今の設定（書き換える）
- * @param configPath 設定ファイルのパス
- * @param worker ワーカー
- * @param voice 声のチェック
- * @param state 今のマイクの状態（録り始めたときの設定として履歴に残す）
- * @param view 最後に描いた声のチェックの状態（履歴の何件目かを id に直す）
- */
-void handleAction(PanelHit hit, Config& config, const std::string& configPath, MicWorker& worker, VoiceCheck& voice,
-                  const MicState& state, const VoiceView& view) {
-    const PanelAction action = hit.action;
-    switch (action) {
-        case PanelAction::Earphone:  // プリセットは呼び出し側で扱う（書き込みが終わるまでカードの見た目を保つため）
-        case PanelAction::Speaker:
-        case PanelAction::EchoOn:    // エコー除去・ノイズ除去も呼び出し側で扱う（出口ごとに覚えるため）
-        case PanelAction::EchoOff:
-        case PanelAction::NsOn:
-        case PanelAction::NsOff:
-        case PanelAction::TabQuick:  // タブも呼び出し側で扱う（ドラッグを終わらせてから切り替えるため）
-        case PanelAction::TabFine: return;
-        case PanelAction::AutostartOn:
-        case PanelAction::AutostartOff:
-            std::fprintf(stderr, "[操作] SteamVR と一緒に起動 %s\n", action == PanelAction::AutostartOn ? "オン" : "オフ");
-            worker.request({MicCommand::Kind::SetAutostart, action == PanelAction::AutostartOn});
-            return;
-        case PanelAction::Unmute: {
-            std::fprintf(stderr, "[操作] ミュートを解除\n");
-            MicCommand command {MicCommand::Kind::SetMute};
-            command.value = false;
-            worker.request(command);
-            return;
-        }
-        case PanelAction::LanguageJa:
-        case PanelAction::LanguageEn:
-        case PanelAction::LanguageSc: {
-            Language language;
-            switch (action) {
-                case PanelAction::LanguageJa: language = Language::Ja; break;
-                case PanelAction::LanguageEn: language = Language::En; break;
-                case PanelAction::LanguageSc: language = Language::Sc; break;
-                default: return;
-            }
-            if (language == config.language) return;
-            config.language = language;
-            std::string error;
-            if (!saveConfig(configPath, config, error)) std::fprintf(stderr, "[設定] 保存に失敗: %s\n", error.c_str());
-            return;
-        }
-        case PanelAction::Record:
-            if (voice.recording()) {
-                std::fprintf(stderr, "[操作] 録音を止める\n");
-                voice.stopRecording();
-            } else {
-                std::fprintf(stderr, "[操作] 録音\n");
-                voice.startRecording(state);
-            }
-            return;
-        case PanelAction::Play: {
-            if (hit.index < 0 || hit.index >= static_cast<int>(view.clips.size())) return;
-            const uint64_t id = view.clips[hit.index]->id;
-            if (voice.playingId() == id) {
-                std::fprintf(stderr, "[操作] 再生を止める\n");
-                voice.stopPlayback();
-            } else {
-                std::fprintf(stderr, "[操作] %d 件目を再生\n", hit.index + 1);
-                voice.play(id);
-            }
-            return;
-        }
-        case PanelAction::NsVadSlider:  // ノイズ除去の強さは呼び出し側で扱う（ドラッグと間引きがあるため）
-        case PanelAction::NsGraceSlider:
-        case PanelAction::NsVadMinus:
-        case PanelAction::NsVadPlus:
-        case PanelAction::NsGraceMinus:
-        case PanelAction::NsGracePlus:
-        case PanelAction::NsReset:
-        case PanelAction::Quit:            // 終了は呼び出し側で扱う
-        case PanelAction::UpdateCheckNow:  // 更新の操作も呼び出し側で扱う（UpdateChecker を持っているため）
-        case PanelAction::UpdateInstall:
-        case PanelAction::UpdateRetry:
-        case PanelAction::UpdateDismiss:
-        case PanelAction::UpdateCancel:    // 「やめる」はパネルの中で確認を取り消すだけ
-        case PanelAction::None: break;
-    }
-}
-
-/**
  * オーバーレイとして常駐する。SteamVR が無ければ数秒おきに待ち、終了の知らせで静かに終わる。
  * すでに常駐していれば、そちらにパネルを開くよう知らせてすぐ終わる（VR_Init はしない）。
  * @param options コマンドライン
@@ -1322,28 +1504,6 @@ int runOverlay(const Options& options) {
     updaterConfig.assetPattern = kUpdateAssetPattern;
     frame_updater::UpdateChecker updater(updaterConfig);
     uint64_t drawnUpdateRevision = updater.revision();
-    /**
-     * 版の行のボタンを扱う（UpdateChecker を持っているのでここで扱う）。
-     * @param action 押されたボタン
-     */
-    const auto handleUpdateAction = [&](PanelAction action) {
-        switch (action) {
-            case PanelAction::UpdateCheckNow:
-                std::fprintf(stderr, "[更新] 確認します\n");
-                updater.checkNow();
-                return;
-            case PanelAction::UpdateInstall:
-            case PanelAction::UpdateRetry:
-                std::fprintf(stderr, "[更新] 更新を始めます\n");
-                if (!updater.install()) std::fprintf(stderr, "[更新] 始められませんでした\n");
-                return;
-            case PanelAction::UpdateDismiss:
-                updater.dismiss();
-                return;
-            default:
-                return;
-        }
-    };
 
     // SteamVR を待つ
     std::string lastMessage;
@@ -1374,79 +1534,112 @@ int runOverlay(const Options& options) {
     MicState state;
     uint64_t drawnVersion = worker.snapshot(state);
     if (outputSync.update(state, config, todayText())) saveNow();  // ワーカーが SteamVR を待つ間に読み終えていたとき
+    VoiceView voiceView;
+    /**
+     * 今の状態からパネルに渡すものを作る。
+     * @return 描くときに渡すもの
+     */
+    const auto makeModel = [&]() {
+        PanelModel model;
+        model.state = state;
+        model.voice = voiceView;
+        model.update = updater.status();
+        model.activeOutputKey = outputSync.activeKey();
+        model.switchNotice = outputSync.notice().shown;
+        model.switchKey = outputSync.notice().key;
+        return model;
+    };
     {
         std::vector<uint8_t> thumbnail;
         renderThumbnail(fonts, kThumbnailSize, thumbnail);
         vr.submitThumbnail(thumbnail.data(), kThumbnailSize);
         // パネルにも最初の 1 枚（読み込み中）を入れておく（初めて選ばれたとき、画像が無い瞬間を作らない）
-        panel.render(config, state, VoiceView(), updater.status());
+        panel.render(config, makeModel());
         vr.submitPanel(panel.toRgba().data());
         vr.logOverlayState("接続直後");
     }
 
-    VoiceView voiceView;
     double lastVoiceFrame = 0.0;
     // ノイズ除去の強さ: バーのドラッグ中は 100ms おきに最後の値だけ送り、離したときに必ず 1 回送って保存する
     double lastNsSendAt = -1.0;
     double sentVad = -1.0;
     double sentGrace = -1.0;
+    bool dirty = true;
+    bool wasVisible = false;
+    bool firstSubmit = true;
+    bool userQuit = false;
     // プリセット: 書き込みと読み直しが終わるまで（受付番号まで終わるまで）、押したカードを選択中の見た目で保つ
     uint64_t presetTicket = 0;
     /**
-     * プリセットを書き込む。イヤホン = エコー除去オフ・ノイズ除去オフ、スピーカー = エコー除去オン・ノイズ除去オフ。
-     * ワーカーが 2 つ書いてから 1 回だけ読み直す。ノイズ除去のバーの値は変えない。
-     * @param action Earphone か Speaker
-     */
-    /**
-     * 今の出口の設定を書き換えて保存する（パネルの操作。自動の切り替えの知らせは消す）。
+     * 表示している出口の設定を書き換えて保存する（パネルの操作。自動の切り替えの知らせは消す）。
+     * 今の出口なら、前の版のキー（ns_vad_*）にも強さを写す。
      * @param change 書き換え
      */
-    const auto changeActiveProfile = [&](const std::function<void(OutputProfile&)>& change) {
+    const auto changeViewedProfile = [&](const std::function<void(OutputProfile&)>& change) {
         outputSync.dismissNotice();
-        if (outputSync.activeKey().empty()) return;
+        const std::string key = panel.viewedOutputKey();
+        if (key.empty()) return;
         bool created = false;
-        OutputProfile& profile = ensureProfile(config, outputSync.activeKey(), state.devices, created);
+        OutputProfile& profile = ensureProfile(config, key, state.devices, created);
         change(profile);
-        config.hasNsParams = true;  // 前の版のキーにも今の出口の強さを写す
-        config.nsVad = profile.nsVad;
-        config.nsGrace = profile.nsGrace;
+        if (key == outputSync.activeKey()) {
+            config.hasNsParams = true;
+            config.nsVad = profile.nsVad;
+            config.nsGrace = profile.nsGrace;
+        }
         saveNow();
     };
+    /**
+     * 表示している出口が、今かけている出口か（そうなら書き込みもする。ほかの出口は覚えるだけ）。
+     * @return 今の出口なら true
+     */
+    const auto viewingLive = [&]() { return panel.viewingActive(); };
+    /**
+     * プリセットにする。イヤホン = エコー除去オフ・ノイズ除去オフ、スピーカー = エコー除去オン・ノイズ除去オフ。
+     * 今の出口なら、ワーカーが 2 つ書いてから 1 回だけ読み直す。ノイズ除去のバーの値は変えない。
+     * @param action Earphone か Speaker
+     */
     const auto applyPreset = [&](PanelAction action) {
         const bool speaker = action == PanelAction::Speaker;
-        std::fprintf(stderr, "[操作] %s\n", speaker ? "スピーカー（エコー除去オン・ノイズ除去オフ）"
-                                                     : "イヤホン（エコー除去オフ・ノイズ除去オフ）");
-        presetTicket = worker.request(MicCommand::applySettings(speaker, false, false, 0, 0, false));
-        outputSync.noteWrite(presetTicket);
-        panel.holdPreset(action, nowSeconds() + 8.0);  // 書き込みが詰まっても、8 秒で実際の値の表示に戻す
-        changeActiveProfile([speaker](OutputProfile& p) {
+        std::fprintf(stderr, "[操作] %s（%s）\n",
+                     speaker ? "スピーカー（エコー除去オン・ノイズ除去オフ）" : "イヤホン（エコー除去オフ・ノイズ除去オフ）",
+                     viewingLive() ? "今の出口" : panel.viewedOutputKey().c_str());
+        if (viewingLive()) {
+            presetTicket = worker.request(MicCommand::applySettings(speaker, false, false, 0, 0, false));
+            outputSync.noteWrite(presetTicket);
+            panel.holdPreset(action, nowSeconds() + 8.0);  // 書き込みが詰まっても、8 秒で実際の値の表示に戻す
+        }
+        changeViewedProfile([speaker](OutputProfile& p) {
             p.echo = speaker;
             p.ns = false;
         });
     };
     /**
-     * エコー除去・ノイズ除去を 1 つ切り替える（今の出口の設定として覚える）。
+     * エコー除去・ノイズ除去を 1 つ切り替える（表示している出口の設定として覚え、今の出口なら書く）。
      * @param action EchoOn / EchoOff / NsOn / NsOff
      */
     const auto applyToggle = [&](PanelAction action) {
         const bool echo = action == PanelAction::EchoOn || action == PanelAction::EchoOff;
         const bool on = action == PanelAction::EchoOn || action == PanelAction::NsOn;
-        std::fprintf(stderr, "[操作] %s %s\n", echo ? "エコー除去" : "ノイズ除去", on ? "オン" : "オフ");
-        MicCommand command {echo ? MicCommand::Kind::SetEcho : MicCommand::Kind::SetNs};
-        command.value = on;
-        outputSync.noteWrite(worker.request(command));
-        changeActiveProfile([echo, on](OutputProfile& p) { (echo ? p.echo : p.ns) = on; });
+        std::fprintf(stderr, "[操作] %s %s（%s）\n", echo ? "エコー除去" : "ノイズ除去", on ? "オン" : "オフ",
+                     viewingLive() ? "今の出口" : panel.viewedOutputKey().c_str());
+        if (viewingLive()) {
+            MicCommand command {echo ? MicCommand::Kind::SetEcho : MicCommand::Kind::SetNs};
+            command.value = on;
+            outputSync.noteWrite(worker.request(command));
+        }
+        changeViewedProfile([echo, on](OutputProfile& p) { (echo ? p.echo : p.ns) = on; });
     };
     /**
-     * ノイズ除去の強さをワーカーに頼み（前に送った値と同じなら頼まない）、読み直しが追いつくまで表示を保つ。
+     * ノイズ除去の強さを変える。今の出口ならワーカーに頼み（前に送った値と同じなら頼まない）、読み直しが追いつくまで表示を保つ。
      * @param vad 判定の厳しさ（%）
      * @param grace 余韻（ms）
-     * @param save 設定ファイルにも保存するか（離したとき・− / ＋・標準に戻す）
+     * @param save 出口の設定として保存するか（離したとき・標準に戻す）
      */
     const auto sendNsParams = [&](double vad, double grace, bool save) {
         vad = clampNsVad(vad);
         grace = clampNsGrace(grace);
-        if (vad != sentVad || grace != sentGrace) {
+        if (viewingLive() && (vad != sentVad || grace != sentGrace)) {
             MicCommand command {MicCommand::Kind::SetNsParams};
             command.vad = vad;
             command.grace = grace;
@@ -1457,47 +1650,12 @@ int runOverlay(const Options& options) {
         }
         panel.holdNsValues(vad, grace, nowSeconds() + 1.5);
         if (!save) return;
-        changeActiveProfile([vad, grace](OutputProfile& p) {
+        changeViewedProfile([vad, grace](OutputProfile& p) {
             p.nsVad = vad;
             p.nsGrace = grace;
         });
-        std::fprintf(stderr, "[ノイズ除去] 判定の厳しさ %.0f%%・余韻 %.0fms を保存しました\n", vad, grace);
-    };
-    /**
-     * ノイズ除去の強さのボタン・バーの押下を扱う。
-     * @param action 押されたもの
-     * @return 扱ったら true（ほかのボタンなら false）
-     */
-    const auto handleNsAction = [&](PanelAction action) {
-        double vad = 0.0;
-        double grace = 0.0;
-        panel.displayedNsValues(state, vad, grace);  // バーを押した直後は、押したところの値
-        switch (action) {
-            case PanelAction::NsVadSlider:
-            case PanelAction::NsGraceSlider: sendNsParams(vad, grace, false); return true;
-            case PanelAction::NsVadMinus: sendNsParams(vad - kNsVadStep, grace, true); return true;
-            case PanelAction::NsVadPlus: sendNsParams(vad + kNsVadStep, grace, true); return true;
-            case PanelAction::NsGraceMinus: sendNsParams(vad, grace - kNsGraceStep, true); return true;
-            case PanelAction::NsGracePlus: sendNsParams(vad, grace + kNsGraceStep, true); return true;
-            case PanelAction::NsReset:
-                std::fprintf(stderr, "[操作] ノイズ除去の強さを標準に戻す\n");
-                sendNsParams(kNsVadDefault, kNsGraceDefault, true);
-                return true;
-            default: return false;
-        }
-    };
-    /**
-     * ポインターを離した（パネルから外れた）とき。バーをドラッグしていたら、最後の値を必ず送って保存する。
-     * @param leave パネルから外れたなら true
-     * @return 描き直しが要るなら true
-     */
-    const auto releasePointer = [&](bool leave) {
-        double vad = 0.0;
-        double grace = 0.0;
-        const bool wasDragging = finishDrag(panel, state, vad, grace);
-        const bool changed = leave ? panel.pointerLeave() : panel.pointerUp();
-        if (wasDragging) sendNsParams(vad, grace, true);
-        return changed || wasDragging;
+        std::fprintf(stderr, "[ノイズ除去] 判定の厳しさ %.0f%%・余韻 %.0fms を保存しました（%s）\n", vad, grace,
+                     viewingLive() ? "今の出口" : panel.viewedOutputKey().c_str());
     };
     /**
      * タブを切り替えて保存する。バーをドラッグしていたら、先に最後の値を送って保存する。
@@ -1506,17 +1664,162 @@ int runOverlay(const Options& options) {
     const auto switchTab = [&](PanelTab tab) {
         double vad = 0.0;
         double grace = 0.0;
-        if (finishDrag(panel, state, vad, grace)) sendNsParams(vad, grace, true);
+        if (finishDrag(panel, vad, grace)) sendNsParams(vad, grace, true);
         if (config.tab == tab) return;
         config.tab = tab;
         std::fprintf(stderr, "[操作] タブ: %s\n", tab == PanelTab::Quick ? "かんたん" : "細かく調整");
-        std::string error;
-        if (!saveConfig(options.configPath, config, error)) std::fprintf(stderr, "[設定] 保存に失敗: %s\n", error.c_str());
+        saveNow();
     };
-    bool dirty = true;
-    bool wasVisible = false;
-    bool firstSubmit = true;
-    bool userQuit = false;
+    /**
+     * 既定の出力か入力を切り替える（ワーカーが wpctl set-default して読み返す）。
+     * @param output 出力なら true
+     * @param key 出口・マイクのキー
+     */
+    const auto setDefault = [&](bool output, const std::string& key) {
+        const AudioEndpoint* endpoint = output ? state.devices.findOutput(key) : state.devices.findInput(key);
+        if (endpoint == nullptr || endpoint->nodeId < 0) {
+            std::fprintf(stderr, "[操作] %s %s が一覧にありません\n", output ? "出口" : "マイク", key.c_str());
+            return;
+        }
+        std::fprintf(stderr, "[操作] %s: %s（ノード %s・id %d）\n", output ? "ここから音を出す" : "このマイクを使う",
+                     endpoint->name.c_str(), endpoint->nodeName.c_str(), endpoint->nodeId);
+        worker.request(MicCommand::setDefault(output, *endpoint));
+    };
+    /**
+     * パネルのボタンの操作を実行する（押したとき・一覧の中は離したとき）。
+     * @param hit 押されたボタン
+     */
+    const auto handleHit = [&](const PanelHit& hit) {
+        const PanelAction action = hit.action;
+        switch (action) {
+            case PanelAction::None:
+            case PanelAction::ShowApps:          // 画面・重ねた画面の切り替えはパネルの中だけ
+            case PanelAction::ShowSettings:
+            case PanelAction::CloseOverlay:
+            case PanelAction::UpdateInstall:     // 1 回目は確認の表示（パネルの中）
+            case PanelAction::UpdateConfirmNo:
+            case PanelAction::NsVadSlider:       // バーはドラッグのたびに下で送る
+            case PanelAction::NsGraceSlider: break;
+            case PanelAction::Quit:
+                std::fprintf(stderr, "[VR] パネルの「終了」で終了します\n");
+                userQuit = true;
+                break;
+            case PanelAction::MuteToggle: {
+                if (!state.muteKnown) break;
+                std::fprintf(stderr, "[操作] %s\n", state.muted ? "ミュートを解除" : "ミュートする");
+                MicCommand command {MicCommand::Kind::SetMute};
+                command.value = !state.muted;
+                worker.request(command);
+                break;
+            }
+            case PanelAction::OpenOutputPicker:
+            case PanelAction::OpenMicPicker: worker.refreshDevicesNow(); break;  // 一覧をすぐ読み直す
+            case PanelAction::TabQuick:
+            case PanelAction::TabFine: switchTab(action == PanelAction::TabQuick ? PanelTab::Quick : PanelTab::Fine); break;
+            case PanelAction::Earphone:
+            case PanelAction::Speaker: applyPreset(action); break;
+            case PanelAction::EchoOn:
+            case PanelAction::EchoOff:
+            case PanelAction::NsOn:
+            case PanelAction::NsOff: applyToggle(action); break;
+            case PanelAction::NsReset:
+                std::fprintf(stderr, "[操作] ノイズ除去の強さを標準に戻す\n");
+                sendNsParams(kNsVadDefault, kNsGraceDefault, true);
+                break;
+            case PanelAction::UndoSwitch:
+                if (outputSync.undo(config)) saveNow();
+                break;
+            case PanelAction::UseBuiltinMic: setDefault(false, kBuiltinMicKey); break;
+            case PanelAction::OutputView:
+                std::fprintf(stderr, "[操作] 出口 %s の設定を表示\n", hit.key.c_str());
+                outputSync.dismissNotice();
+                break;
+            case PanelAction::OutputUse: setDefault(true, hit.key); break;
+            case PanelAction::MicUse: setDefault(false, hit.key); break;
+            case PanelAction::OutputForget:
+                // つながっていない出口だけ忘れられる（今の出口は消さない）
+                if (hit.key != outputSync.activeKey() && state.devices.findOutput(hit.key) == nullptr &&
+                    config.outputs.erase(hit.key) > 0) {
+                    std::fprintf(stderr, "[操作] 出口 %s の設定を忘れました\n", hit.key.c_str());
+                    saveNow();
+                }
+                break;
+            case PanelAction::Record:
+                if (voice.recording()) {
+                    std::fprintf(stderr, "[操作] 録音を止める\n");
+                    voice.stopRecording();
+                } else {
+                    std::fprintf(stderr, "[操作] 録音\n");
+                    voice.startRecording(state);
+                }
+                break;
+            case PanelAction::Play: {
+                if (hit.index < 0 || hit.index >= static_cast<int>(voiceView.clips.size())) break;
+                const uint64_t id = voiceView.clips[hit.index]->id;
+                if (voice.playingId() == id) {
+                    std::fprintf(stderr, "[操作] 再生を止める\n");
+                    voice.stopPlayback();
+                } else {
+                    std::fprintf(stderr, "[操作] %d 件目を再生\n", hit.index + 1);
+                    voice.play(id);
+                }
+                break;
+            }
+            case PanelAction::UpdateCheckNow:
+                std::fprintf(stderr, "[更新] 確認します\n");
+                updater.checkNow();
+                break;
+            case PanelAction::UpdateConfirmYes:
+            case PanelAction::UpdateRetry:
+                std::fprintf(stderr, "[更新] 更新を始めます\n");
+                if (!updater.install()) std::fprintf(stderr, "[更新] 始められませんでした\n");
+                break;
+            case PanelAction::UpdateDismiss: updater.dismiss(); break;
+            case PanelAction::UpdateCheckOn:
+            case PanelAction::UpdateCheckOff: {
+                const bool on = action == PanelAction::UpdateCheckOn;
+                if (config.updateCheck == on) break;
+                config.updateCheck = on;
+                std::fprintf(stderr, "[操作] 新しい版の確認 %s\n", on ? "オン" : "オフ");
+                saveNow();
+                break;
+            }
+            case PanelAction::AutostartOn:
+            case PanelAction::AutostartOff:
+                std::fprintf(stderr, "[操作] SteamVR と一緒に起動 %s\n", action == PanelAction::AutostartOn ? "オン" : "オフ");
+                worker.request({MicCommand::Kind::SetAutostart, action == PanelAction::AutostartOn});
+                break;
+            case PanelAction::LanguageJa:
+            case PanelAction::LanguageEn:
+            case PanelAction::LanguageSc: {
+                const Language language = action == PanelAction::LanguageJa   ? Language::Ja
+                                          : action == PanelAction::LanguageEn ? Language::En
+                                                                              : Language::Sc;
+                if (language == config.language) break;
+                config.language = language;
+                saveNow();
+                break;
+            }
+        }
+    };
+    /**
+     * ポインターを離した（パネルから外れた）とき。バーをドラッグしていたら、最後の値を必ず送って保存する。
+     * 一覧の中を押してドラッグせずに離したときは、その行・ボタンの操作を実行する。
+     * @param leave パネルから外れたなら true
+     */
+    const auto releasePointer = [&](bool leave) {
+        double vad = 0.0;
+        double grace = 0.0;
+        const bool wasDragging = finishDrag(panel, vad, grace);
+        PanelHit hit;
+        if (leave) {
+            panel.pointerLeave();
+        } else {
+            hit = panel.pointerUp();
+        }
+        if (wasDragging) sendNsParams(vad, grace, true);
+        handleHit(hit);
+    };
     double nextOverlayCheck = nowSeconds() + kOverlayCheckSec;
     /**
      * 自己修復: 自分のダッシュボードのオーバーレイがまだ SteamVR にあるかを確かめ（FindOverlay 1 回）、
@@ -1529,7 +1832,7 @@ int runOverlay(const Options& options) {
         renderThumbnail(fonts, kThumbnailSize, thumbnail);
         vr.submitThumbnail(thumbnail.data(), kThumbnailSize);
         drawnUpdateRevision = updater.revision();
-        panel.render(config, state, voiceView, updater.status());
+        panel.render(config, makeModel());
         vr.submitPanel(panel.toRgba().data());
         vr.logOverlayState("作り直した後");
         dirty = true;
@@ -1579,7 +1882,9 @@ int runOverlay(const Options& options) {
             // バーをドラッグしたまま閉じたときも、最後の値を送って保存する
             double vad = 0.0;
             double grace = 0.0;
-            if (finishDrag(panel, state, vad, grace)) sendNsParams(vad, grace, true);
+            if (finishDrag(panel, vad, grace)) sendNsParams(vad, grace, true);
+            // 次に開いたときは、マイクの設定の画面・今の出口の表示から（重ねた画面も閉じる）
+            panel.resetView();
         }
         if (options.debugRecordOnOpen && visible && !wasVisible) {
             std::fprintf(stderr, "[声] 確認用: パネルが開いたので録音を始めます\n");
@@ -1592,27 +1897,26 @@ int runOverlay(const Options& options) {
                 case PointerInput::Type::Move: dirty |= panel.pointerMove(input.x, input.y); break;
                 case PointerInput::Type::Down: {
                     const PanelHit hit = panel.pointerDown(input.x, input.y, nowSeconds());
-                    if (hit.action == PanelAction::Quit) {
-                        std::fprintf(stderr, "[VR] パネルの「終了」で終了します\n");
-                        userQuit = true;
-                    } else if (hit.action == PanelAction::Earphone || hit.action == PanelAction::Speaker) {
-                        applyPreset(hit.action);
-                    } else if (hit.action == PanelAction::EchoOn || hit.action == PanelAction::EchoOff ||
-                               hit.action == PanelAction::NsOn || hit.action == PanelAction::NsOff) {
-                        applyToggle(hit.action);
-                    } else if (hit.action == PanelAction::TabQuick || hit.action == PanelAction::TabFine) {
-                        switchTab(hit.action == PanelAction::TabQuick ? PanelTab::Quick : PanelTab::Fine);
-                    } else if (hit.action == PanelAction::UpdateCheckNow || hit.action == PanelAction::UpdateInstall ||
-                               hit.action == PanelAction::UpdateRetry || hit.action == PanelAction::UpdateDismiss) {
-                        handleUpdateAction(hit.action);
-                    } else if (!handleNsAction(hit.action)) {
-                        handleAction(hit, config, options.configPath, worker, voice, state, voiceView);
+                    if (hit.action == PanelAction::NsVadSlider || hit.action == PanelAction::NsGraceSlider) {
+                        // バーを押した直後は、押したところの値を送る（保存は離したとき）
+                        double vad = 0.0;
+                        double grace = 0.0;
+                        panel.displayedNsValues(vad, grace);
+                        sendNsParams(vad, grace, false);
                     }
+                    handleHit(hit);
                     dirty = true;
                     break;
                 }
-                case PointerInput::Type::Up: dirty |= releasePointer(false); break;
-                case PointerInput::Type::Leave: dirty |= releasePointer(true); break;
+                case PointerInput::Type::Up:
+                    releasePointer(false);
+                    dirty = true;
+                    break;
+                case PointerInput::Type::Leave:
+                    releasePointer(true);
+                    dirty = true;
+                    break;
+                case PointerInput::Type::Scroll: dirty |= panel.scroll(input.y); break;
             }
         }
         if (userQuit) break;
@@ -1625,7 +1929,7 @@ int runOverlay(const Options& options) {
         if (panel.dragging() && nowSeconds() - lastNsSendAt >= 0.1) {
             double vad = 0.0;
             double grace = 0.0;
-            panel.displayedNsValues(state, vad, grace);
+            panel.displayedNsValues(vad, grace);
             sendNsParams(vad, grace, false);
         }
         dirty |= panel.tick(nowSeconds());  // 「もう一度押すと終了」の期限切れ
@@ -1637,7 +1941,7 @@ int runOverlay(const Options& options) {
             voiceView = voice.view();
             lastVoiceFrame = nowSeconds();
             drawnUpdateRevision = updater.revision();
-            panel.render(config, state, voiceView, updater.status());
+            panel.render(config, makeModel());
             vr.submitPanel(panel.toRgba().data());
             dirty = false;
             if (firstSubmit) {

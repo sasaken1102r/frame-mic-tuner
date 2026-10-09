@@ -67,14 +67,6 @@ float peakToDb(float peak) {
     return 20.0f * std::log10(peak);
 }
 
-std::string clipSettingLabel(const VoiceClip& clip, const char* earphone, const char* speaker, const char* withNs,
-                             const char* unknown) {
-    if (!clip.echoKnown) return unknown;
-    std::string label = clip.echo ? speaker : earphone;
-    if (clip.nsKnown && clip.ns) label += withNs;
-    return label;
-}
-
 VoiceCheck::~VoiceCheck() {
     shutdown();
 }
@@ -242,6 +234,15 @@ bool VoiceCheck::startRecording(const MicState& settings) {
     pending_.nsParamsKnown = settings.nsParams.vadKnown && settings.nsParams.graceKnown;
     pending_.nsVad = settings.nsParams.vad;
     pending_.nsGrace = settings.nsParams.grace;
+    // 音の出口とマイク（履歴に「AB13X・エコー除去オフ」「AB13X のマイク（処理なし）」などと出す）
+    const AudioDevices& devices = settings.devices;
+    const AudioEndpoint* output = devices.findOutput(devices.defaultOutputKey);
+    const AudioEndpoint* input = devices.findInput(devices.defaultInputKey);
+    pending_.outputKnown = !devices.defaultOutputKey.empty();
+    pending_.outputSpeaker = isBuiltinSpeaker(devices.defaultOutputKey);
+    pending_.outputName = output != nullptr ? output->name : std::string();
+    pending_.externalMic = !devices.defaultInputKey.empty() && !isBuiltinMic(devices.defaultInputKey);
+    pending_.micName = input != nullptr ? input->name : std::string();
     recordBuffer_.assign(static_cast<size_t>(kVoiceMaxSec * kVoiceRate), 0);
     recordCount_ = 0;
     recordSkip_ = static_cast<size_t>(kWarmupSec * kVoiceRate);

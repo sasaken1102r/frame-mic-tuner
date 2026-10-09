@@ -42,6 +42,9 @@ const char* kindName(ContrastKind kind) {
     return "";
 }
 
+/** 重ねた画面の後ろ（パネルの地を暗くしたもの）。 */
+constexpr Color kDimmedBg = blendColor(kBackdrop, kBg, kBackdropAlpha);
+
 }  // namespace
 
 double relativeLuminance(Color c) {
@@ -61,108 +64,87 @@ double requiredRatio(ContrastKind kind) {
 }
 
 const std::vector<ContrastPair>& contrastPairs() {
-    // 描画で使っている組み合わせをすべて並べる（文字の大きさによらず、文字はすべて 4.5:1 で確かめる）
+    // このアプリが自分で描く部分の組み合わせ（文字の大きさによらず、文字はすべて 4.5:1 で確かめる）。
+    // 切り替え・ボタン・一番下の行は frame-ui の部品なので、frame-ui の組み合わせ（下）で確かめる
     static const std::vector<ContrastPair> pairs = {
-        // 地・カードの上の文字
+        // 地・カード・一段暗い箱の上の文字
         {"見出し・本文（パネルの地）", kText, kBg, ContrastKind::Text},
-        {"本文（カード）", kText, kCard, ContrastKind::Text},
-        {"補足の文字（パネルの地）", kTextMuted, kBg, ContrastKind::Text},
-        {"補足の文字（カード）", kTextMuted, kCard, ContrastKind::Text},
-        // ボタン・ピル
-        {"ボタンの文字", kText, kControl, ContrastKind::Text},
-        {"ボタンの補足の文字", kTextMuted, kControl, ContrastKind::Text},
-        {"ボタンの文字（ポインターが乗っている・押している）", kText, kControlHover, ContrastKind::Text},
-        {"選択中の文字（アクセントの塗り）", kOnAccent, kAccent, ContrastKind::Text},
-        {"選択中の文字（押している間）", kOnAccent, kAccentPressed, ContrastKind::Text},
-        {"押せないボタンの文字", kTextDisabled, kControl, ContrastKind::Disabled},
-        // アクセント色の文字
-        {"アクセントの文字（パネルの地）", kAccent, kBg, ContrastKind::Text},
-        {"アクセントの文字（カード）", kAccent, kCard, ContrastKind::Text},
-        {"通っている段の文字（アクセントの薄い塗り）", kText, kAccentTint, ContrastKind::Text},
-        // 状態
-        {"「使用中」のバッジ", kSuccess, kSuccessTint, ContrastKind::Text},
-        {"「未使用」のバッジ", kTextMuted, kControl, ContrastKind::Text},
-        {"失敗・「録音中」の文字（カード）", kDanger, kCard, ContrastKind::Text},
-        {"失敗の文字（パネルの地）", kDanger, kBg, ContrastKind::Text},
-        {"録音中の停止ボタンの文字", kText, kDangerTint, ContrastKind::Text},
-        {"終了ボタンの文字", kText, kQuitFill, ContrastKind::Text},
-        {"終了の確認中の文字（赤い塗り）", kOnAccent, kDanger, ContrastKind::Text},
-        // 部品の見分け（WCAG 1.4.11）
-        {"ボタン・ピルの枠（カード）", kBorder, kCard, ContrastKind::Ui},
-        {"ボタン・ピルの枠（パネルの地）", kBorder, kBg, ContrastKind::Ui},
-        {"選択中の塗り（カード）", kAccent, kCard, ContrastKind::Ui},
-        {"選択中の塗り（ピルの地）", kAccent, kControl, ContrastKind::Ui},
-        {"選択中の塗り（パネルの地）", kAccent, kBg, ContrastKind::Ui},
-        {"録音の ● と停止ボタンの枠", kDanger, kControl, ContrastKind::Ui},
-        {"録音中の停止ボタンの枠（カード）", kDanger, kCard, ContrastKind::Ui},
-        {"「使用中」の ●（バッジの塗り）", kSuccess, kSuccessTint, ContrastKind::Ui},
-        {"「未使用」の ○（バッジの塗り）", kTextMuted, kControl, ContrastKind::Ui},
-        {"終了ボタンの枠（パネルの地）", kDanger, kBg, ContrastKind::Ui},
-        {"選ばれていないカードの枠（パネルの地）", kBorder, kBg, ContrastKind::Ui},
-        {"選ばれていないカードを押している間の枠（パネルの地）", kAccent, kBg, ContrastKind::Ui},
-        {"録音のボタンの枠（カード）", kDanger, kCard, ContrastKind::Ui},
-        {"つながりの線（通っている）", kAccent, kCard, ContrastKind::Ui},
-        {"つながりの線・段の枠（通っていない、点線）", kBorder, kCard, ContrastKind::Ui},
-        {"音量メーターの塗り（メーターの地）", kAccent, kBg, ContrastKind::Ui},
+        {"本文（カード・重ねた画面）", kText, kCard, ContrastKind::Text},
+        {"本文（一段暗い箱・一覧の行）", kText, kInset, ContrastKind::Text},
+        {"補足（カード）", kTextMuted, kCard, ContrastKind::Text},
+        {"補足（一段暗い箱・一覧の行）", kTextMuted, kInset, ContrastKind::Text},
+        {"控えめな本文（カード: 外付けのマイクの説明・リポジトリ）", kTextSoft, kCard, ContrastKind::Text},
+        {"控えめな本文（一段暗い箱: 更新の文）", kTextSoft, kInset, ContrastKind::Text},
+        {"一覧の区切りの見出し（重ねた画面）", kLabelSoft, kCard, ContrastKind::Text},
+        // 見出しの状態ラベル（幅を決めてあり、ミュートしても動かない）
+        {"状態ラベル「使用中」", kSuccess, kSuccessTint, ContrastKind::Text},
+        {"状態ラベル「使用中」の ●", kSuccess, kSuccessTint, ContrastKind::Ui},
+        {"状態ラベル「未使用」「読み込み中」", kIdleText, kIdleFill, ContrastKind::Text},
+        {"状態ラベル「ミュート中」", kMuteText, kMuteFill, ContrastKind::Text},
+        {"状態ラベル「ミュート中」のマイクに斜線の絵", kMuteText, kMuteFill, ContrastKind::Ui},
+        // 音の出口・マイクの欄（パネルの地の上の、カードの色のボタン）
+        {"欄の文字", kText, kCard, ContrastKind::Text},
+        {"欄の文字（乗っている）", kText, kControlHover, ContrastKind::Text},
+        {"欄の文字（押している）", kText, kControlDown, ContrastKind::Text},
+        {"欄の小さな見出し・数", kTextMuted, kCard, ContrastKind::Text},
+        {"欄の枠（パネルの地）", kBorder, kBg, ContrastKind::Ui},
+        {"出口・マイクの絵（角丸の箱の上）", kText, kIconBox, ContrastKind::Ui},
+        // プリセット（かんたん）: 選ばれていないものはボタンの地、選択中はピンクの塗り
+        {"プリセットの名前（選ばれていない）", kText, kControl, ContrastKind::Text},
+        {"プリセットの効果（選ばれていない）", kTextMuted, kControl, ContrastKind::Text},
+        {"プリセットの名前（乗っている）", kText, kControlHover, ContrastKind::Text},
+        {"プリセットの枠（カード）", kBorder, kCard, ContrastKind::Ui},
+        {"プリセットの札の文字（選ばれていない）", kText, kBg, ContrastKind::Text},
+        {"プリセットの札の枠（選ばれていない）", kBorder, kControl, ContrastKind::Ui},
+        {"プリセットの名前・絵（選択中）", kOnAccent, kAccent, ContrastKind::Text},
+        {"プリセットの名前（選択中に乗っている）", kOnAccent, kAccentHover, ContrastKind::Text},
+        {"プリセットの名前（選択中を押している）", kOnAccent, kAccentPressed, ContrastKind::Text},
+        {"プリセットの効果（選択中）", kOnAccentSoft, kAccent, ContrastKind::Text},
+        {"プリセットの札の文字（選択中）", kAccentText, kOnAccent, ContrastKind::Text},
+        {"選択中のプリセットの塗り（カード）", kAccent, kCard, ContrastKind::Ui},
+        // 自動で切り替えた知らせ（ピンクの枠）
+        {"知らせの文字（カード）", kText, kCard, ContrastKind::Text},
+        {"知らせの枠・入れ替えの絵（カード）", kAccent, kCard, ContrastKind::Ui},
+        // ノイズ除去の強さのバー（カードの上）
+        {"バーの値（オン）", kText, kCard, ContrastKind::Text},
+        {"バーの値（ノイズ除去がオフの間）", kTextMuted, kCard, ContrastKind::Text},
+        {"バーの塗り（現在値まで）", kAccent, kCard, ContrastKind::Ui},
+        {"バーのつまみ", kText, kCard, ContrastKind::Ui},
+        {"バーの塗り・つまみ（ノイズ除去がオフの間）", kTextMuted, kCard, ContrastKind::Ui},
+        // つながり（一段暗い箱）
+        {"通っている段の文字（ピンクの薄い塗り）", kText, kAccentTint, ContrastKind::Text},
+        {"通っている段の枠・線（一段暗い箱）", kAccent, kInset, ContrastKind::Ui},
+        {"通っていない段の文字（一段暗い箱）", kTextMuted, kInset, ContrastKind::Text},
+        {"通っていない段の点線の枠・線（一段暗い箱）", kBorder, kInset, ContrastKind::Ui},
+        // 声のチェック（カード）
+        {"録音のボタンの ●・枠（カード）", kDanger, kCard, ContrastKind::Ui},
+        {"「録音中」の文字（カード）", kDangerText, kCard, ContrastKind::Text},
+        {"録音中の「停止」（赤い塗り）", kOnAccent, kDanger, ContrastKind::Text},
+        {"音量メーターの塗り（パネルの地の溝）", kAccent, kBg, ContrastKind::Ui},
+        {"再生のボタンの枠（カード）", kBorder, kCard, ContrastKind::Ui},
+        {"再生のボタンの ▶（カード）", kText, kCard, ContrastKind::Ui},
+        {"再生中の ■（ピンクの塗り）", kOnAccent, kAccent, ContrastKind::Ui},
+        {"履歴の 2 行目（カード）", kTextSoft, kCard, ContrastKind::Text},
         {"波形（カード）", kTextMuted, kCard, ContrastKind::Ui},
-        {"波形の再生済み・再生位置の線（カード）", kAccent, kCard, ContrastKind::Ui},
-        {"再生ボタンの ▶（ボタンの地）", kText, kControl, ContrastKind::Ui},
-        // イヤホン / スピーカーのカード（プリセット）のチップ: 地の色のピルに文字
-        {"チップの文字（選ばれていないカード）", kText, kBg, ContrastKind::Text},
-        {"チップの文字（選択中のカードの上）", kAccent, kBg, ContrastKind::Text},
-        {"チップの枠（選ばれていないカード）", kBorder, kCard, ContrastKind::Ui},
-        {"チップの枠（選ばれていないカードに乗っている間）", kBorder, kControl, ContrastKind::Ui},
-        {"チップの地（選択中のカードの上）", kBg, kAccent, ContrastKind::Ui},
-        {"プリセットの見出し・細かく調整の見出し", kTextMuted, kBg, ContrastKind::Text},
-        // 左の列のタブ（かんたん / 細かく調整。ピル型の切り替え）と、かんたんのタブの「細かく調整を見る →」
-        {"タブの文字（選ばれていない）", kText, kControl, ContrastKind::Text},
-        {"タブの文字（選択中、アクセントの塗り）", kOnAccent, kAccent, ContrastKind::Text},
-        {"タブの枠（パネルの地）", kBorder, kBg, ContrastKind::Ui},
-        {"タブの選択中の塗り（タブの地）", kAccent, kControl, ContrastKind::Ui},
-        {"「細かく調整を見る →」の文字", kText, kControl, ContrastKind::Text},
-        {"「細かく調整を見る →」の文字（乗っている間）", kText, kControlHover, ContrastKind::Text},
-        {"「標準は 23%・500ms」の説明", kTextMuted, kBg, ContrastKind::Text},
-        // どちらのプリセットとも一致しないときのグレーのカード（押せるまま。非活性の例外にせず、3:1 以上で読めるように）
-        {"グレーのカードの文字・絵・チップの文字（地の塗り）", kTextDisabled, kBg, ContrastKind::Disabled},
-        {"グレーのカードの文字（乗っている間）", kTextDisabled, kControl, ContrastKind::Disabled},
-        {"グレーのカードの点線の枠・チップの枠", kBorder, kBg, ContrastKind::Ui},
-        {"グレーのカードのチップの枠（乗っている間）", kBorder, kControl, ContrastKind::Ui},
-        {"「今は細かく調整した設定です」", kText, kBg, ContrastKind::Text},
-        // ノイズ除去の強さのバー（パネルの地の上）
-        {"バーの値の文字", kText, kBg, ContrastKind::Text},
-        {"バーの塗り（現在値まで）", kAccent, kBg, ContrastKind::Ui},
-        {"バーの溝の枠", kBorder, kBg, ContrastKind::Ui},
-        {"バーのつまみ", kText, kBg, ContrastKind::Ui},
-        {"バーのつまみの縁（塗りの上で、つまみを見分ける）", kBg, kAccent, ContrastKind::Ui},
-        {"ノイズ除去オフのときのバーの塗り・つまみ・値", kTextDisabled, kBg, ContrastKind::Disabled},
-        {"− / ＋ / 標準に戻すの文字", kText, kControl, ContrastKind::Text},
-        {"再生中の ■（アクセントの塗り）", kOnAccent, kAccent, ContrastKind::Ui},
-        // 更新の帯（カード。枠は外がパネルの地、内がカード）
-        {"更新の帯の文（最新・確認中・更新中・確認）", kText, kCard, ContrastKind::Text},
-        {"更新の帯の補足（版だけ・2 行目）", kTextMuted, kCard, ContrastKind::Text},
-        {"更新の帯の新しい版・入れ終わりの文", kAccent, kCard, ContrastKind::Text},
-        {"更新の帯の失敗の文", kDanger, kCard, ContrastKind::Text},
-        {"更新の帯のアクセントの枠（パネルの地）", kAccent, kBg, ContrastKind::Ui},
-        {"更新の帯のアクセントの枠（カード）", kAccent, kCard, ContrastKind::Ui},
-        {"更新の帯の赤い枠（パネルの地）", kDanger, kBg, ContrastKind::Ui},
-        {"更新の帯の赤い枠（カード）", kDanger, kCard, ContrastKind::Ui},
-        {"更新の帯のボタンの文字", kText, kControl, ContrastKind::Text},
-        {"更新の帯のボタンの文字（乗っている・押している）", kText, kControlHover, ContrastKind::Text},
-        {"更新の帯のボタンの枠（カード）", kBorder, kCard, ContrastKind::Ui},
-        {"更新の帯の「更新する」の文字（アクセントの塗り）", kOnAccent, kAccent, ContrastKind::Text},
-        {"更新の帯の「更新する」の文字（押している間）", kOnAccent, kAccentPressed, ContrastKind::Text},
-        {"更新の帯の「更新する」の塗り（カード）", kAccent, kCard, ContrastKind::Ui},
-        // ミュート中: 見出しのバッジ（パネルの地の上）と、更新の帯の場所に出すミュートの帯
-        {"「ミュート中」のバッジの文字", kMuteText, kMuteFill, ContrastKind::Text},
-        {"「ミュート中」のバッジの絵（マイクに斜線）", kMuteText, kMuteFill, ContrastKind::Ui},
-        {"「ミュート中」のバッジの枠（パネルの地）", kMuteBorder, kBg, ContrastKind::Ui},
-        {"「ミュート中」のバッジの枠（バッジの地）", kMuteBorder, kMuteFill, ContrastKind::Ui},
-        {"ミュートの帯の文", kMuteText, kMuteFill, ContrastKind::Text},
-        {"ミュートの帯の赤い枠（パネルの地）", kMuteBorder, kBg, ContrastKind::Ui},
-        {"ミュートの帯の赤い枠（帯の地）", kMuteBorder, kMuteFill, ContrastKind::Ui},
-        {"「ミュートを解除」の文字", kText, kControl, ContrastKind::Text},
-        {"「ミュートを解除」の文字（乗っている・押している）", kText, kControlHover, ContrastKind::Text},
-        {"「ミュートを解除」の枠（帯の地）", kBorder, kMuteFill, ContrastKind::Ui},
+        {"波形の再生済みの部分（カード）", kAccent, kCard, ContrastKind::Ui},
+        // 失敗
+        {"失敗の文字（パネルの地。一番下の行）", kDangerText, kBg, ContrastKind::Text},
+        {"失敗の文字（カード）", kDangerText, kCard, ContrastKind::Text},
+        {"失敗の文字（一段暗い箱）", kDangerText, kInset, ContrastKind::Text},
+        // 重ねた画面（音の出口を選ぶ・使うマイク）
+        {"重ねた画面の枠（後ろの暗い地）", kBorder, kDimmedBg, ContrastKind::Ui},
+        {"重ねた画面の枠（重ねた画面の地）", kBorder, kCard, ContrastKind::Ui},
+        {"一覧の行の枠（設定を表示中、ピンク）", kAccent, kCard, ContrastKind::Ui},
+        {"一覧の行の文字（設定を表示中）", kText, kRowSelected, ContrastKind::Text},
+        {"一覧の行の補足（設定を表示中）", kTextMuted, kRowSelected, ContrastKind::Text},
+        {"札「設定を表示中」「このアプリで使う」", kAccentText, kAccentTint, ContrastKind::Text},
+        {"行の状態「いま使用中」の文字と ●", kSuccess, kInset, ContrastKind::Text},
+        {"行の状態「いま使用中」の文字と ●（設定を表示中の行）", kSuccess, kRowSelected, ContrastKind::Text},
+        {"スクロールバーのつまみ（溝の上）", kBorder, kIconBox, ContrastKind::Ui},
+        // アプリと更新（一段暗い箱の更新の表示）
+        {"新しい版があります（一段暗い箱）", kAccentText, kInset, ContrastKind::Text},
+        {"更新の箱のピンクの枠（カード）", kAccent, kCard, ContrastKind::Ui},
+        {"更新の箱の赤い枠（カード）", kDanger, kCard, ContrastKind::Ui},
     };
     return pairs;
 }
@@ -195,8 +177,8 @@ int printContrastReport() {
                     hexText(bg).c_str(), ratio, pair.need, pair.what);
     }
     if (lowestPair != nullptr) {
-        std::printf("いちばん低い比: %.2f（%s: %s / %s）\n", lowest, lowestPair->what, hexText(lowestPair->fg).c_str(),
-                    hexText(lowestPair->bg).c_str());
+        std::printf("いちばん低い比（このアプリの分）: %.2f（%s: %s / %s）\n", lowest, lowestPair->what,
+                    hexText(lowestPair->fg).c_str(), hexText(lowestPair->bg).c_str());
     }
     std::printf("%zu 組中 %d 組が不合格\n", contrastPairs().size() + frame_ui::contrastPairs().size(), failures);
     return failures == 0 ? 0 : 1;

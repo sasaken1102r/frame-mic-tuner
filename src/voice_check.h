@@ -32,6 +32,11 @@ struct VoiceClip {
     bool nsParamsKnown = false;   ///< 録ったときのノイズ除去の強さが読めていたか
     double nsVad = 0.0;           ///< 判定の厳しさ（%）
     double nsGrace = 0.0;         ///< 余韻（ms）
+    bool outputKnown = false;     ///< 録ったときの音の出口が分かっているか
+    bool outputSpeaker = false;   ///< その出口が Frame のスピーカーか
+    std::string outputName;       ///< その出口の機器の名前（Frame のスピーカーのときは使わない）
+    bool externalMic = false;     ///< 外付けのマイクで録った（エコー除去・ノイズ除去はかかっていない）
+    std::string micName;          ///< そのマイクの機器の名前
     std::vector<int16_t> samples;  ///< mono・int16・kVoiceRate
     std::vector<float> wave;       ///< kWaveBins 本の区間ごとのピーク（0〜1）
     float peakDb = -120.0f;        ///< 全体のピーク（dBFS）
@@ -74,7 +79,7 @@ public:
     /**
      * 録音を始める（再生中なら止める）。既定の入力につなぐ。node.virtual は付けない
      * （tracker にマイク使用中と数えてもらい、本番と同じフィルターを通った音で録るため）。
-     * @param settings 録り始めたときの設定（履歴に「イヤホン」などと出す）
+     * @param settings 録り始めたときの設定と音の出口・マイク（履歴に「AB13X・エコー除去オフ」などと出す）
      * @return 始められたら true
      */
     bool startRecording(const MicState& settings);
@@ -180,18 +185,6 @@ private:
      */
     pw_stream* connectStream(const char* name, bool capture);
 };
-
-/**
- * 録ったときの設定を短い言葉にする（例:「イヤホン」「スピーカー＋ノイズ除去」）。
- * @param clip 1 件
- * @param earphone 「イヤホン」の文言
- * @param speaker 「スピーカー」の文言
- * @param withNs 「＋ノイズ除去」の文言
- * @param unknown 分からないときの文言
- * @return 文言
- */
-std::string clipSettingLabel(const VoiceClip& clip, const char* earphone, const char* speaker, const char* withNs,
-                             const char* unknown);
 
 /**
  * 0〜1 のピークを dBFS にする。

@@ -164,6 +164,9 @@ bool VrOverlay::createDashboardOverlay(std::string& message) {
         overlay->GetOverlayFlag(main, vr::VROverlayFlags_EnableControlBarClose, &closeEnabled);
     std::fprintf(stderr, "[VR] SetOverlayFlag(EnableControlBarClose) -> %s（読み返し: %s, %s）\n",
                  overlayErrorName(closeError), overlayErrorName(readError), closeEnabled ? "true" : "false");
+    // コントローラーのスティックで、重ねた画面の一覧をスクロールする（VREvent_ScrollSmooth）
+    checkOverlay("SetOverlayFlag(SendVRSmoothScrollEvents)",
+                 overlay->SetOverlayFlag(main, vr::VROverlayFlags_SendVRSmoothScrollEvents, true));
     return true;
 }
 
@@ -274,6 +277,10 @@ VrEvents VrOverlay::pollEvents() {
                     }
                     break;
                 case vr::VREvent_FocusLeave: result.pointer.push_back({PointerInput::Type::Leave, 0, 0}); break;
+                case vr::VREvent_ScrollSmooth:
+                case vr::VREvent_ScrollDiscrete:
+                    result.pointer.push_back({PointerInput::Type::Scroll, 0, event.data.scroll.ydelta});
+                    break;
                 // ダッシュボードのアイコンにホバーしたときの「閉じる」（VROverlayFlags_EnableControlBarClose）。
                 // SteamVR 自体の終了（VRSystem 側の VREvent_Quit）とは別のイベント
                 case vr::VREvent_OverlayClosed:

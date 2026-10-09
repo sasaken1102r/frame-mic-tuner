@@ -9,7 +9,13 @@
 
 /** ダッシュボードのパネルへのポインター操作（座標は画像の左上が原点の px）。 */
 struct PointerInput {
-    enum class Type { Move, Down, Up, Leave };
+    enum class Type {
+        Move,
+        Down,
+        Up,
+        Leave,
+        Scroll,  ///< コントローラーのスティックのスクロール（y に縦の量。正で上）
+    };
     Type type;
     double x = 0.0;
     double y = 0.0;
