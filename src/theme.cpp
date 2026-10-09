@@ -184,10 +184,20 @@ int printContrastReport() {
         std::printf("%-6s %s %s %6.2f %5.1f  %s（%s）\n", ok ? "合格" : "不合格", hexText(pair.fg).c_str(),
                     hexText(pair.bg).c_str(), ratio, need, pair.what, kindName(pair.kind));
     }
+    // 共通の UI 部品（vendor/frame-ui）が使う組み合わせも、同じ式で確かめる
+    for (const frame_ui::ContrastPair& pair : frame_ui::contrastPairs()) {
+        const Color fg = uiColor(pair.fg);
+        const Color bg = uiColor(pair.bg);
+        const double ratio = contrastRatio(fg, bg);
+        const bool ok = ratio >= pair.need;
+        if (!ok) ++failures;
+        std::printf("%-6s %s %s %6.2f %5.1f  frame-ui: %s\n", ok ? "合格" : "不合格", hexText(fg).c_str(),
+                    hexText(bg).c_str(), ratio, pair.need, pair.what);
+    }
     if (lowestPair != nullptr) {
         std::printf("いちばん低い比: %.2f（%s: %s / %s）\n", lowest, lowestPair->what, hexText(lowestPair->fg).c_str(),
                     hexText(lowestPair->bg).c_str());
     }
-    std::printf("%zu 組中 %d 組が不合格\n", contrastPairs().size(), failures);
+    std::printf("%zu 組中 %d 組が不合格\n", contrastPairs().size() + frame_ui::contrastPairs().size(), failures);
     return failures == 0 ? 0 : 1;
 }

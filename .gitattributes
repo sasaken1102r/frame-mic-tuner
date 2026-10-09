@@ -1,3 +1,4 @@
 * text=auto eol=lf
 *.png binary
 vendor/frame-updater/** text eol=lf
+vendor/frame-ui/** text eol=lf

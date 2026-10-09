@@ -33,8 +33,10 @@ add_executable(frame-mic-tuner
   src/draw.cpp
   src/i18n.cpp
   vendor/frame-updater/cpp/update_check.cpp
+  # 共通の UI 部品（色・寸法・切り替え・ボタン・カード・一番下の行）
+  vendor/frame-ui/cpp/frame_ui.cpp
 )
-target_include_directories(frame-mic-tuner PRIVATE third_party/openvr vendor/frame-updater/cpp)
+target_include_directories(frame-mic-tuner PRIVATE third_party/openvr vendor/frame-updater/cpp vendor/frame-ui/cpp)
 target_compile_options(frame-mic-tuner PRIVATE -Wall -Wextra)
 # --version で出す版（CHANGELOG.md と合わせる）
 target_compile_definitions(frame-mic-tuner PRIVATE FRAME_MIC_TUNER_VERSION="${PROJECT_VERSION}")

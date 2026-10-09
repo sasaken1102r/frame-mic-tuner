@@ -1,0 +1,5 @@
+# Copied from the frame-ui repository by its sync.sh. Don't edit these files here:
+# change them in frame-ui and run sync.sh again. verify.sh checks that nothing was edited.
+version 0.2.0
+commit 9a2750f
+synced 2026-10-10

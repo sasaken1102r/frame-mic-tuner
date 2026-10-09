@@ -4,6 +4,8 @@
 
 #include "draw.h"
 
+#include "frame_ui.h"  // vendor/frame-ui/cpp（色は共通の UI 部品と同じものを使う）
+
 #include <string>
 #include <vector>
 
@@ -28,34 +30,43 @@ constexpr Color blendColor(Color top, Color bottom, double alpha) {
             top.b * alpha + bottom.b * (1 - alpha)};
 }
 
-// ---- 背景の段（GitHub ダーク系） ----
-constexpr Color kBg = hexColor(0x0d1117);         ///< パネルの地
-constexpr Color kCard = hexColor(0x161b22);       ///< カード
-constexpr Color kControl = hexColor(0x21262d);    ///< ボタン・ピルの地
-constexpr Color kControlHover = hexColor(0x30363d);  ///< ボタンにポインターが乗っている・押している
-constexpr Color kDivider = hexColor(0x30363d);    ///< 飾りの線（部品の見分けには使わない）
+/**
+ * 共通の UI 部品（frame_ui）の色をこのアプリの色にする。
+ * @param c frame_ui の色
+ * @return 色
+ */
+constexpr Color uiColor(frame_ui::Rgb c) {
+    return {c.r, c.g, c.b};
+}
+
+// ---- 背景の段（frame-ui と同じ） ----
+constexpr Color kBg = uiColor(frame_ui::kBg);                ///< パネルの地
+constexpr Color kCard = uiColor(frame_ui::kCard);            ///< カード
+constexpr Color kControl = uiColor(frame_ui::kControl);      ///< ボタン・ピルの地
+constexpr Color kControlHover = uiColor(frame_ui::kControlHover);  ///< ボタンにポインターが乗っている・押している
+constexpr Color kDivider = uiColor(frame_ui::kDivider);      ///< 飾りの線（部品の見分けには使わない）
 // ---- 文字 ----
-constexpr Color kText = hexColor(0xe6edf3);       ///< 本文
-constexpr Color kTextMuted = hexColor(0x9198a1);  ///< 補足（説明・見出し）
-constexpr Color kTextDisabled = hexColor(0x7d8590);  ///< 押せないボタンの文字
+constexpr Color kText = uiColor(frame_ui::kText);            ///< 本文
+constexpr Color kTextMuted = uiColor(frame_ui::kTextMuted);  ///< 補足（説明・見出し）
+constexpr Color kTextDisabled = hexColor(0x7d8590);          ///< 押せないボタンの文字
 // ---- 部品の枠（背景に対して 3:1 以上。WCAG 1.4.11） ----
-constexpr Color kBorder = hexColor(0x6e7681);
+constexpr Color kBorder = uiColor(frame_ui::kBorder);
 // ---- イメージカラー ----
-constexpr Color kAccent = hexColor(0xe27dfd);         ///< 選択中・通っている段・再生位置
-constexpr Color kAccentPressed = hexColor(0xc45fe0);  ///< 押している間（少し濃く）
-constexpr Color kOnAccent = hexColor(0x0d1117);       ///< アクセントの塗りの上の文字（白は 2.4:1 で不可）
+constexpr Color kAccent = uiColor(frame_ui::kAccent);            ///< 選択中・通っている段・再生位置
+constexpr Color kAccentPressed = uiColor(frame_ui::kAccentDown); ///< 押している間（少し濃く）
+constexpr Color kOnAccent = uiColor(frame_ui::kOnAccent);        ///< アクセントの塗りの上の文字（白は不可）
 constexpr double kAccentTintAlpha = 0.20;             ///< アクセントの薄い塗り・光彩（15〜25%）
 constexpr Color kAccentTint = blendColor(kAccent, kCard, kAccentTintAlpha);  ///< カードの上の薄い塗り
 // ---- 状態の色（色だけで伝えない。● や文字も付ける） ----
-constexpr Color kSuccess = hexColor(0x3fb950);    ///< マイク使用中
-constexpr Color kSuccessTint = blendColor(kSuccess, kBg, 0.15);
-constexpr Color kDanger = hexColor(0xf85149);     ///< 失敗・録音中
-constexpr Color kDangerTint = blendColor(kDanger, kCard, 0.18);  ///< 録音中の停止ボタンの塗り
-constexpr Color kQuitFill = blendColor(kDanger, kBg, 0.12);      ///< 終了ボタンの塗り（控えめ）
+constexpr Color kSuccess = uiColor(frame_ui::kChipOkText);       ///< マイク使用中
+constexpr Color kSuccessTint = uiColor(frame_ui::kChipOkFill);
+constexpr Color kDanger = uiColor(frame_ui::kDanger);            ///< 失敗・録音中
+constexpr Color kDangerTint = uiColor(frame_ui::kDangerDown);    ///< 録音中の停止ボタンの塗り
+constexpr Color kQuitFill = uiColor(frame_ui::kDangerFill);      ///< 終了ボタンの塗り（控えめ）
 // ---- ミュート中（見出しのバッジと、ミュートの帯。色だけで伝えない。マイクに斜線の絵と文字も付ける） ----
-constexpr Color kMuteFill = hexColor(0x3a1a1c);    ///< 地
-constexpr Color kMuteText = hexColor(0xff8a80);    ///< 文字・絵
-constexpr Color kMuteBorder = hexColor(0xe5534b);  ///< 枠
+constexpr Color kMuteFill = uiColor(frame_ui::kChipBadFill);     ///< 地
+constexpr Color kMuteText = uiColor(frame_ui::kChipBadText);     ///< 文字・絵
+constexpr Color kMuteBorder = uiColor(frame_ui::kDanger);        ///< 枠
 
 /** コントラストの確かめ方の種類。 */
 enum class ContrastKind {

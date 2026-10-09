@@ -18,6 +18,8 @@ fi
 
 # 同梱する vendor/frame-updater/ が、手で書き換えられていない・frame-updater 本体とずれていないかを確かめる
 sh vendor/frame-updater/verify.sh
+# 共通の UI 部品（vendor/frame-ui/。実行ファイルに焼き込むので tar.gz には入れない）も同じく確かめる
+sh vendor/frame-ui/verify.sh
 
 # 開発用の build/ とは別のフォルダで、Release でビルドし直す
 cmake -G Ninja -S . -B "$build_dir" -DCMAKE_BUILD_TYPE=Release
