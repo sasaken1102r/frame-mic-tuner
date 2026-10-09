@@ -34,6 +34,24 @@ https://github.com/user-attachments/assets/14b5e180-f417-4d90-85f5-6ba1dc573546
 
 ## インストール
 
+### いちばんかんたん：Frame の中だけで入れる（おすすめ）
+
+PC は要りません。Frame の Konsole（画面下のバーの ＋ →「プログラムを起動」→ Konsole）で次のコマンドを入力して Enter を押し、メニューで **3**（frame-mic-tuner）を選びます。
+
+```sh
+curl -fsSL https://frame.sasaken1102s.net | sh
+```
+
+- 最初の 1 回だけ、Steam 設定 → システム →「開発者モードを有効化」をオンにしておきます（オフだと ＋ の一覧に Konsole が出ません）
+- ほかのアプリ（frameeyeosc・frame-jp-keyboard・frame-perf-overlay）も同じメニューから一緒に入れられます
+- 更新は、同じコマンドで同じ番号を選ぶだけ。アンインストールはメニューの `u` から
+- くわしい手順と動画：https://frame.sasaken1102s.net
+- 質問なしで入れるなら `curl -fsSL https://frame.sasaken1102s.net | sh -s -- install mic`
+
+入るもの・オプションは、下の「PC から入れる」と同じです（中で `install.sh` を実行しています）。
+
+### PC から入れる
+
 [リリースのページ](https://github.com/sasaken1102r/frame-mic-tuner/releases)から `frame-mic-tuner-<バージョン>.tar.gz` をダウンロードして、ヘッドセットにコピーします（例: PC から）:
 
 ```sh

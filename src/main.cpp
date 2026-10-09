@@ -169,7 +169,7 @@ void printUsage() {
         "  --dump-png PATH       OpenVR なしでパネルの画像を PNG に書き出して終わる（今の値で描く）\n"
         "  --thumbnail-png PATH  ダッシュボードのサムネイル（＋のアイコンと同じ絵）を PNG に書き出す\n"
         "      --thumbnail-size N  そのサムネイルの一辺（既定 256）\n"
-        "      --language ja|en  設定の言語の代わりにこの言語で描く\n"
+        "      --language ja|en|sc  設定の言語の代わりにこの言語で描く\n"
         "      --preview-quit    「もう一度押すと終了」の状態で描く\n"
         "      --tab quick|fine  設定のタブの代わりに、このタブ（かんたん / 細かく調整）で描く\n"
         "      --fake            実際の値を読まず、ダミーの状態（スピーカー・使用中）で描く。次の --fake-* も同じ\n"
@@ -252,7 +252,7 @@ bool parseOptions(int argc, char** argv, Options& options) {
             options.language = argv[++i];
             Language check;
             if (!parseLanguage(options.language, check)) {
-                std::fprintf(stderr, "--language は ja か en です: %s\n", options.language.c_str());
+                std::fprintf(stderr, "--language は ja / en / sc です: %s\n", options.language.c_str());
                 return false;
             }
         } else if (arg == "--preview-quit") {
@@ -1148,8 +1148,15 @@ void handleAction(PanelHit hit, Config& config, const std::string& configPath, M
             worker.request({MicCommand::Kind::Unmute});
             return;
         case PanelAction::LanguageJa:
-        case PanelAction::LanguageEn: {
-            const Language language = action == PanelAction::LanguageJa ? Language::Ja : Language::En;
+        case PanelAction::LanguageEn:
+        case PanelAction::LanguageSc: {
+            Language language;
+            switch (action) {
+                case PanelAction::LanguageJa: language = Language::Ja; break;
+                case PanelAction::LanguageEn: language = Language::En; break;
+                case PanelAction::LanguageSc: language = Language::Sc; break;
+                default: return;
+            }
             if (language == config.language) return;
             config.language = language;
             std::string error;

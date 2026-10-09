@@ -18,7 +18,7 @@ enum class PanelTab {
  * アプリの設定。ファイルが無いときはこの既定値で動く。
  */
 struct Config {
-    Language language = systemLanguage();  ///< 画面の文言の言語（"ja" / "en"。既定は Frame のシステム言語）
+    Language language = systemLanguage();  ///< 画面の文言の言語（"ja" / "en" / "sc"。既定は Frame のシステム言語）
     PanelTab tab = PanelTab::Quick;        ///< 最後に見ていたタブ（パネルを開いたときにこのタブを出す）
     // ノイズ除去の強さ。SteamOS は PipeWire の起動のたびに既定値に戻すので、アプリが保存してかけ直す。
     // バーを動かすまでは持たない（持たない間は何もかけず、SteamOS の値のまま）
