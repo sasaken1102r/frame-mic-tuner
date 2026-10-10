@@ -17,6 +17,16 @@ The BSD-3-Clause license does not allow using Valve's name to endorse or promote
 - A copy of the author's own update helper, shared with the author's other Steam Frame apps. It is not third-party code
 - License: MIT, the same as this repository ([LICENSE](LICENSE))
 
+### Shared UI parts (`vendor/frame-ui/`)
+
+- A copy of the author's own UI parts (colors, sizes, buttons, cards and the text tables), shared with the author's other Steam Frame panels. It is not third-party code
+- License: MIT, the same as this repository ([LICENSE](LICENSE))
+
+### List of the author's other apps (`vendor/frame-apps/`)
+
+- A copy of the author's own code for the "Apps & updates" list of the author's other Steam Frame apps, shared with those apps. It includes the icon PNGs of those apps, which are built into the program. It is not third-party code
+- License: MIT, the same as this repository ([LICENSE](LICENSE))
+
 ## Not bundled: libraries used from the headset
 
 The build links dynamically against these libraries, which are already installed on SteamOS (or come with SteamVR). None of their code is included in this repository or in the release tar.gz: the prebuilt binary in a release (`frame-mic-tuner-<version>.tar.gz`) links to the copies already on the headset and ships with this file, [LICENSE](LICENSE) and [third_party/openvr/LICENSE](third_party/openvr/LICENSE). The licenses below were checked against the packages installed on a Steam Frame (SteamOS, `pacman -Qi`, 2026-09-27).
@@ -37,4 +47,4 @@ The panel is drawn with the headset's own Noto Sans CJK (`/usr/share/fonts/noto-
 
 ## Programs called at run time
 
-The app runs `wpctl`, `pw-link`, `pw-dump`, `pw-cli`, `pw-metadata` (part of PipeWire / WirePlumber) and `systemctl` (systemd) as separate programs with fixed arguments, and the bundled update script (`vendor/frame-updater/`, by the same author and covered by this repository's MIT license) runs `curl`, `tar`, `sha256sum` and `systemd-run`. None of them are linked or bundled.
+The app runs `wpctl`, `pw-link`, `pw-dump`, `pw-cli`, `pw-metadata` (part of PipeWire / WirePlumber), `systemctl` (systemd, including `systemctl --user is-active` for the list of the author's other apps), `curl` (to fetch that list and the apps' icons from frame.sasaken1102s.net) and `konsole` (which runs `sh -c` with an installer command, only after you confirm installing another app) as separate programs with fixed arguments (`vendor/frame-apps/cpp/frame_apps.cpp`). The bundled update script (`vendor/frame-updater/`, by the same author and covered by this repository's MIT license) runs `curl`, `tar`, `sha256sum` and `systemd-run`. None of them are linked or bundled.
