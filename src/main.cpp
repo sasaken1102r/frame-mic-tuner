@@ -1342,7 +1342,7 @@ int runSelfTest() {
         const Config config;
         PanelModel model = loadedModel(false);
         model.update.state = frame_updater::UpdateState::Available;
-        model.update.current = "0.2.0";
+        model.update.current = "0.3.0";
         model.update.latest = "9.9.9";
         model.update.installable = true;
         panel.showForPreview(PanelView::Apps, PanelOverlay::None);

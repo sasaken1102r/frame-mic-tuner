@@ -20,7 +20,7 @@ body:
     attributes:
       label: Version / 版
       description: Shown on the panel's update card, or run `~/.local/bin/frame-mic-tuner --version` on the Frame. / パネルの更新の帯、または Frame で `~/.local/bin/frame-mic-tuner --version`
-      placeholder: "0.2.0"
+      placeholder: "0.3.0"
     validations:
       required: true
   - type: input
