@@ -299,6 +299,7 @@ ssh steamos@<headset-ip> 'cd ~/frame-mic-tuner && cmake -G Ninja -S . -B build &
 - ノイズ除去の強さの見た目: `--fake-ns-vad N`・`--fake-ns-grace N`（ダミーの値）・`--preview-drag-vad N`・`--preview-drag-grace N`（そのバーを N までドラッグしている）
 - ミュートの見た目: `--fake-muted`（見出しが赤い「ミュート中」とミュートを解除）・`--fake-error write-mute`（解除に失敗した）・`--fake-error write-mute-on`（ミュートに失敗した）
 - 更新の見た目（アプリと更新の画面）: `--fake-update unknown|uptodate|checking|available|manual|installing|installed|checkfailed|installfailed`・`--preview-update-confirm`
+- テスト用の環境変数（ほかのアプリの一覧の取得先。`vendor/frame-apps/cpp/frame_apps.cpp`）: `FRAME_APPS_URL`（取得先のサイト。既定は frame.sasaken1102s.net。`FRAME_APPS_ALLOW_INSECURE=1` のときだけ変えられる）・`FRAME_APPS_ALLOW_INSECURE=1`（http:// と ほかのホストを許す。本番では使わない）
 - `contrib/icons/frame-mic-tuner-{48,128,256}.png` は `--thumbnail-png` で書き出したもの（ダッシュボードのサムネイルと同じ絵）
 - `--test-record [秒]` は録音の前・中・後の `pw-metadata -n filters` も出す。音声はメモリの中だけ
 - ヘッドセットなしで閉じる動きを見る: 常駐に `--debug-record-on-open`（パネルが開いたら自動で録音）、別の端末から `--probe-switch-away [秒]`（アイコンの PNG を入れた一時的なダッシュボードのオーバーレイを作って `ShowDashboard` で切り替え、Mic のパネルを閉じた状態にする。画像の無いオーバーレイには切り替わらなかった）
