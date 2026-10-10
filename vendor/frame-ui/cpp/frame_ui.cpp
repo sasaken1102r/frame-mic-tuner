@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT — part of frame-ui by sasaken1102r, shipped under the host app's MIT license
 // 共通の見た目の部品の実装（frame_ui.h）。
 #include "frame_ui.h"
 

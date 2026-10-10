@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT — part of frame-ui by sasaken1102r, shipped under the host app's MIT license
 // Steam Frame のパネル（frame-mic-tuner・frame-perf-overlay）で共通の見た目の部品。
 // frame-ui リポジトリの原稿を各アプリの vendor/frame-ui/ に sync.sh でコピーして使う。コピー側は直さない。
 //
