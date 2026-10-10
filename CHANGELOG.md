@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0 (unreleased)
+## 0.3.0 (2026-10-10)
 
 - Simplified Chinese UI (thanks to @boholder and @dhies23, #1). The language switch at the bottom left is now **日本語 / English / 简体中文**. The panel starts in Simplified Chinese when Steam is set to Simplified Chinese (`schinese`; without a Steam setting, a `zh_CN` locale); the settings file and `--language` take `"sc"`.
 - Mute: the panel notices when the default mic is muted, however it was muted (Steam, `wpctl set-mute`, an aux button shortcut, ...), by reading `wpctl get-volume @DEFAULT_AUDIO_SOURCE@` with the rest of the state. The header shows a red "Muted" with a crossed-out mic, and a **Mute** / **Unmute** button next to it (`wpctl set-mute @DEFAULT_AUDIO_SOURCE@ 1` / `0`, read back; no confirmation). The status and the button have fixed widths, so the button doesn't move when you mute. If muting or unmuting fails, the bottom line says so.
