@@ -109,7 +109,6 @@ SteamVR のダッシュボードの下の並びに「Mic」のアイコン（マ
 - パネルがダッシュボードで**開いている間は** 1 秒ごとに読み直す（外から `wpctl settings --save ...` で変えられても、1 秒以内に表示が合い、今の出口の設定として覚える）。自動起動の状態（`systemctl --user is-enabled`）は開いた直後と 5 秒おき、出口とマイクの一覧（`pw-dump`）は開いた直後と 5 秒おきと、選ぶ画面を開いたとき。閉じている間は既定の出力・入力だけを 2 秒おきに見る（下の「音の出口ごとの設定」）
 - ボタンを押したら、書く → すぐ読み直す → 表示に反映。書いた値は読み返して確かめ、違えば失敗として赤く出す
 - パネルを閉じたら、マイクの設定の画面・今の出口の表示に戻し、重ねた画面も閉じる（次に開いたときは今の出口から）
-- スクリーンショット（docs/ の v10-*.png）はまだ前の画面のまま（作り直していない）。新しい画面は `--dump-png` の `--fake-*`・`--view`・`--overlay` で撮れる（下の「手動で動かす」）
 
 ## 音の出口ごとの設定
 
@@ -282,6 +281,9 @@ ssh steamos@<headset-ip> 'cd ~/frame-mic-tuner && cmake -G Ninja -S . -B build &
 ./build/frame-mic-tuner --set-ns-vad 10 --set-ns-grace 800   # ノイズ除去の強さをその場でかけてから表示（保存はしない）
 ./build/frame-mic-tuner --dump-png out/panel-ja_2026-09-27_00-00-00.png --language ja
 ./build/frame-mic-tuner --dump-png out/panel-en-error_2026-09-27_00-00-00.png --language en --fake-error write --fake-autostart missing
+# README のスクリーンショット（docs/v11-*.png。ja・en それぞれ「かんたん」と「細かく調整」の 4 枚）。ダミーの値で、アプリと更新の点を消すため --fake-aux running
+./build/frame-mic-tuner --dump-png out/v11-ja-quick-speaker_2026-10-10_17-49-17.png --language ja --fake --fake-output speaker --fake-echo on --fake-ns off --fake-history 5 --fake-playing 2 --fake-update uptodate --fake-aux running --tab quick
+./build/frame-mic-tuner --dump-png out/v11-ja-fine_2026-10-10_17-49-17.png --language ja --fake --fake-output speaker --fake-echo on --fake-ns on --fake-ns-vad 10 --fake-ns-grace 800 --fake-history 5 --fake-playing 3 --fake-update uptodate --fake-aux running --tab fine
 ./build/frame-mic-tuner --thumbnail-png out/thumbnail_2026-09-27_00-00-00.png --thumbnail-size 256
 ./build/frame-mic-tuner --test-record 3          # 3 秒録音 → 長さとピーク → メモリから再生
 ./build/frame-mic-tuner --contrast-report        # 色の組み合わせごとのコントラスト比と合否
