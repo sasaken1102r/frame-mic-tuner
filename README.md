@@ -185,6 +185,8 @@ Useful options that don't need SteamVR: `--print`, `--set-ns-vad N` / `--set-ns-
 
 The update mechanism (`vendor/frame-updater/`), the shared UI parts (`vendor/frame-ui/`) and the list of the author's other apps (`vendor/frame-apps/`) are copied from shared, private repositories; don't edit the copies by hand — their `verify.sh` (run by `scripts/package.sh`) checks that they weren't.
 
+Release builds keep the compiler's speed optimization and enable link-time optimization when supported, plus removal of unused code and data. After building, `ctest --test-dir build --output-on-failure` runs the existing `--self-test` and the exhaustive pixel-conversion tests without SteamVR or audio hardware. `./build/rgba-test --benchmark` also compares conversion timing with the previous algorithm. Tests are not included in release packages; configure with `-DBUILD_TESTING=OFF` to skip building them.
+
 ### Releasing
 
 `scripts/package.sh` runs the `verify.sh` of the three copies under `vendor/`, builds a Release binary, and writes `dist/frame-mic-tuner-<version>.tar.gz` and `dist/SHA256SUMS` (required for the panel's **Update** button to accept the release). It prints the command that creates the GitHub release (and its tag) with both files attached; write the release notes in a file outside the repository first:
