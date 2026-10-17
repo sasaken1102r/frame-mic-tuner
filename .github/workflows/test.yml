@@ -52,6 +52,7 @@ jobs:
           sha256sum ci-results/frame-mic-tuner >ci-results/SHA256SUMS
           readelf -d ci-results/frame-mic-tuner >ci-results/dependencies.txt
           c++ --version >ci-results/compiler.txt
+          ninja -C build -t commands >ci-results/build-commands.txt
           git rev-parse HEAD >ci-results/source-commit.txt
       - uses: actions/upload-artifact@v4
         if: always()
