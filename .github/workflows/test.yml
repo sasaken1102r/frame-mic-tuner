@@ -1,0 +1,63 @@
+name: Linux validation
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ninja-build libcairo2-dev libfreetype-dev libvulkan-dev libpipewire-0.3-dev fonts-noto-cjk
+          sudo mkdir -p /usr/share/fonts/noto-cjk
+          sudo ln -s /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc /usr/share/fonts/noto-cjk/
+          sudo ln -s /usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc /usr/share/fonts/noto-cjk/
+          mkdir -p "$RUNNER_TEMP/openvr"
+          case "$(uname -m)" in
+            aarch64) sdk_arch=linuxarm64 ;;
+            x86_64) sdk_arch=linux64 ;;
+            *) exit 1 ;;
+          esac
+          curl --fail --location --retry 3 "https://raw.githubusercontent.com/ValveSoftware/openvr/0924064316de3effbcd1acf1e309182a2deb1c05/lib/$sdk_arch/libopenvr_api.so" -o "$RUNNER_TEMP/openvr/libopenvr_api.so"
+      - name: Build and test
+        env:
+          LD_LIBRARY_PATH: ${{ runner.temp }}/openvr
+        run: |
+          cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DOPENVR_LIB_DIR="$RUNNER_TEMP/openvr"
+          cmake --build build --parallel 4
+          ctest --test-dir build --output-on-failure
+          for copy in frame-updater frame-ui frame-apps; do sh "vendor/$copy/verify.sh" --local-only; done
+          mkdir -p ci-results
+          ./build/rgba-test --benchmark | tee ci-results/conversion-benchmark.txt
+          ./build/frame-mic-tuner --self-test >ci-results/self-test.txt
+          ./build/frame-mic-tuner --version >ci-results/version.txt
+          cp build/frame-mic-tuner ci-results/frame-mic-tuner
+          strip ci-results/frame-mic-tuner
+          stat -c '%n %s' ci-results/frame-mic-tuner >ci-results/size.txt
+          sha256sum ci-results/frame-mic-tuner >ci-results/SHA256SUMS
+          readelf -d ci-results/frame-mic-tuner >ci-results/dependencies.txt
+          c++ --version >ci-results/compiler.txt
+          git rev-parse HEAD >ci-results/source-commit.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: validation-${{ matrix.runner }}
+          path: |
+            ci-results/
+            build/Testing/Temporary/LastTest.log
+          retention-days: 14

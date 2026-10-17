@@ -112,16 +112,14 @@ void Pen::dot(double x, double y, Color c) const {
 }
 
 void surfaceToRgba(cairo_surface_t* surface, std::vector<uint8_t>& out) {
-    // 乗算済みを戻す計算（c * 255 / a）を前もって表にしておく（割り算を画素ごとにしない）
-    static const std::vector<uint8_t> unpremultiply = [] {
-        std::vector<uint8_t> table(256 * 256);
-        for (uint32_t a = 0; a < 256; ++a) {
-            for (uint32_t c = 0; c < 256; ++c) {
-                const uint32_t value = a == 0 ? 0 : std::min<uint32_t>(255, (c * 255 + a / 2) / a);
-                table[a * 256 + c] = static_cast<uint8_t>(value);
-            }
-        }
-        return table;
+
+    // Generated once in working memory; the executable does not store a 64 KiB table.
+    static const auto table = [] {
+        std::vector<uint8_t> values(256 * 256);
+        for (unsigned a = 1; a < 256; ++a)
+            for (unsigned c = 0; c < 256; ++c)
+                values[a * 256 + c] = static_cast<uint8_t>(std::min(255u, (c * 255 + a / 2) / a));
+        return values;
     }();
 
     cairo_surface_flush(surface);
@@ -131,16 +129,64 @@ void surfaceToRgba(cairo_surface_t* surface, std::vector<uint8_t>& out) {
     const uint8_t* data = cairo_image_surface_get_data(surface);
     out.resize(static_cast<size_t>(width) * height * 4);
     uint8_t* dst = out.data();
+
     for (int y = 0; y < height; ++y) {
         const auto* row = reinterpret_cast<const uint32_t*>(data + static_cast<size_t>(y) * stride);
-        for (int x = 0; x < width; ++x) {
-            // cairo は乗算済みの ARGB（ネイティブエンディアンの 32bit）なので、戻して RGBA に並べ替える
-            const uint32_t p = row[x];
-            const uint32_t a = p >> 24;
-            const uint8_t* line = unpremultiply.data() + a * 256;
-            dst[0] = line[(p >> 16) & 0xFF];
-            dst[1] = line[(p >> 8) & 0xFF];
-            dst[2] = line[p & 0xFF];
+        int x = 0;
+        // Check alpha once per four pixels, keeping lookup overhead low on translucent images.
+        for (; x <= width - 4; x += 4) {
+            const uint32_t p0 = row[x], p1 = row[x + 1], p2 = row[x + 2], p3 = row[x + 3];
+            if (((p0 & p1 & p2 & p3) >> 24) == 255) {
+                dst[0] = static_cast<uint8_t>(p0 >> 16);
+                dst[1] = static_cast<uint8_t>(p0 >> 8);
+                dst[2] = static_cast<uint8_t>(p0);
+                dst[3] = 255;
+                dst[4] = static_cast<uint8_t>(p1 >> 16);
+                dst[5] = static_cast<uint8_t>(p1 >> 8);
+                dst[6] = static_cast<uint8_t>(p1);
+                dst[7] = 255;
+                dst[8] = static_cast<uint8_t>(p2 >> 16);
+                dst[9] = static_cast<uint8_t>(p2 >> 8);
+                dst[10] = static_cast<uint8_t>(p2);
+                dst[11] = 255;
+                dst[12] = static_cast<uint8_t>(p3 >> 16);
+                dst[13] = static_cast<uint8_t>(p3 >> 8);
+                dst[14] = static_cast<uint8_t>(p3);
+                dst[15] = 255;
+
+            } else if (((p0 | p1 | p2 | p3) >> 24) == 0) {
+                std::fill_n(dst, 16, uint8_t{0});
+            } else {
+                const uint8_t* line0 = table.data() + (p0 >> 24) * 256;
+                dst[0] = line0[(p0 >> 16) & 255];
+                dst[1] = line0[(p0 >> 8) & 255];
+                dst[2] = line0[p0 & 255];
+                dst[3] = static_cast<uint8_t>(p0 >> 24);
+                const uint8_t* line1 = table.data() + (p1 >> 24) * 256;
+                dst[4] = line1[(p1 >> 16) & 255];
+                dst[5] = line1[(p1 >> 8) & 255];
+                dst[6] = line1[p1 & 255];
+                dst[7] = static_cast<uint8_t>(p1 >> 24);
+                const uint8_t* line2 = table.data() + (p2 >> 24) * 256;
+                dst[8] = line2[(p2 >> 16) & 255];
+                dst[9] = line2[(p2 >> 8) & 255];
+                dst[10] = line2[p2 & 255];
+                dst[11] = static_cast<uint8_t>(p2 >> 24);
+                const uint8_t* line3 = table.data() + (p3 >> 24) * 256;
+                dst[12] = line3[(p3 >> 16) & 255];
+                dst[13] = line3[(p3 >> 8) & 255];
+                dst[14] = line3[p3 & 255];
+                dst[15] = static_cast<uint8_t>(p3 >> 24);
+
+            }
+            dst += 16;
+        }
+        for (; x < width; ++x) {
+            const uint32_t p = row[x], a = p >> 24;
+            const uint8_t* line = table.data() + a * 256;
+            dst[0] = line[(p >> 16) & 255];
+            dst[1] = line[(p >> 8) & 255];
+            dst[2] = line[p & 255];
             dst[3] = static_cast<uint8_t>(a);
             dst += 4;
         }
