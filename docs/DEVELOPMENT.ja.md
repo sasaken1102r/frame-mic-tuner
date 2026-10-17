@@ -288,6 +288,8 @@ ssh steamos@<headset-ip> 'cd ~/frame-mic-tuner && cmake -G Ninja -S . -B build &
 ./build/frame-mic-tuner --test-record 3          # 3 秒録音 → 長さとピーク → メモリから再生
 ./build/frame-mic-tuner --contrast-report        # 色の組み合わせごとのコントラスト比と合否
 ./build/frame-mic-tuner --self-test              # 判定の関数（自己修復のオーバーレイの判定・出力の読み取り・タブの保存・ドラッグの終わらせ方・音の出口・パネルの当たり判定）を決まった入力で試す
+ctest --test-dir build --output-on-failure       # --self-test と rgba-test（画素の変換を全部の組み合わせ・端・行の余白つきで試す）
+./build/rgba-test --benchmark                    # 画素の変換の時間を、前のやり方（表を毎画素引く）と比べる
 ./build/frame-mic-tuner --probe                  # 常駐しているパネルを SteamVR 経由で探して状態を出す
 ./build/frame-mic-tuner --version
 ```

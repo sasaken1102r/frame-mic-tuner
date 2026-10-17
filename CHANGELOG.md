@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Smaller and a little faster (thanks to @cinnacappu, #3): Release builds use link-time optimization when supported and drop unused code and data (the stripped executable is about 20% smaller), and the panel's Cairo-to-RGBA conversion skips the lookup table for fully opaque or fully transparent pixels (about half the time for an opaque panel on a Frame). The picture is unchanged. `ctest` runs `--self-test` and a new pixel-conversion test (`tests/rgba_test.cpp`); tests are not built for release packages.
+
 ## 0.3.0 (2026-10-10)
 
 - Simplified Chinese UI (thanks to @boholder and @dhies23, #1). The language switch at the bottom left is now **日本語 / English / 简体中文**. The panel starts in Simplified Chinese when Steam is set to Simplified Chinese (`schinese`; without a Steam setting, a `zh_CN` locale); the settings file and `--language` take `"sc"`.

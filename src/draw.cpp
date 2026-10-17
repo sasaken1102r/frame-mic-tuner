@@ -112,8 +112,7 @@ void Pen::dot(double x, double y, Color c) const {
 }
 
 void surfaceToRgba(cairo_surface_t* surface, std::vector<uint8_t>& out) {
-
-    // Generated once in working memory; the executable does not store a 64 KiB table.
+    // 乗算済みを戻す計算（c * 255 / a）を前もって表にしておく（割り算を画素ごとにしない）。a = 0 の行は 0 のまま
     static const auto table = [] {
         std::vector<uint8_t> values(256 * 256);
         for (unsigned a = 1; a < 256; ++a)
@@ -133,7 +132,8 @@ void surfaceToRgba(cairo_surface_t* surface, std::vector<uint8_t>& out) {
     for (int y = 0; y < height; ++y) {
         const auto* row = reinterpret_cast<const uint32_t*>(data + static_cast<size_t>(y) * stride);
         int x = 0;
-        // Check alpha once per four pixels, keeping lookup overhead low on translucent images.
+        // cairo は乗算済みの ARGB（ネイティブエンディアンの 32bit）なので、戻して RGBA に並べ替える。
+        // 4 画素ずつ α を見て、4 つとも不透明・4 つとも透明なら表を引かずにそのまま書く
         for (; x <= width - 4; x += 4) {
             const uint32_t p0 = row[x], p1 = row[x + 1], p2 = row[x + 2], p3 = row[x + 3];
             if (((p0 & p1 & p2 & p3) >> 24) == 255) {
@@ -153,7 +153,6 @@ void surfaceToRgba(cairo_surface_t* surface, std::vector<uint8_t>& out) {
                 dst[13] = static_cast<uint8_t>(p3 >> 8);
                 dst[14] = static_cast<uint8_t>(p3);
                 dst[15] = 255;
-
             } else if (((p0 | p1 | p2 | p3) >> 24) == 0) {
                 std::fill_n(dst, 16, uint8_t{0});
             } else {
@@ -177,7 +176,6 @@ void surfaceToRgba(cairo_surface_t* surface, std::vector<uint8_t>& out) {
                 dst[13] = line3[(p3 >> 8) & 255];
                 dst[14] = line3[p3 & 255];
                 dst[15] = static_cast<uint8_t>(p3 >> 24);
-
             }
             dst += 16;
         }

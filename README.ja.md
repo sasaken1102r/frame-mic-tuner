@@ -185,6 +185,8 @@ SteamVR なしで使える確認用のオプション: `--print`、`--set-ns-vad
 
 更新の仕組み（`vendor/frame-updater/`）・共通の画面の部品（`vendor/frame-ui/`）・作者のほかのアプリの一覧（`vendor/frame-apps/`）は、非公開の共通リポジトリからのコピーです。手で書き換えないでください。それぞれの `verify.sh`（`scripts/package.sh` が実行）が書き換えられていないか確かめます。
 
+Release のビルドは、速さの最適化はそのままに、使えるときはリンク時最適化（LTO）と、使っていないコード・データの削除をかけます。ビルドしたあと `ctest --test-dir build --output-on-failure` で、今までの `--self-test` と、画素の変換を全部の組み合わせで試すテストを SteamVR や音の機器なしで実行できます。`./build/rgba-test --benchmark` は、変換の時間を前のやり方と比べます。テストはリリースの tar.gz には入りません。ビルドしないときは `-DBUILD_TESTING=OFF` を付けて設定してください。
+
 ### リリースの作り方
 
 `scripts/package.sh` は `vendor/` の 3 つのコピーの `verify.sh` を実行し、Release でビルドして `dist/frame-mic-tuner-<バージョン>.tar.gz` と `dist/SHA256SUMS`（パネルの「更新する」がそのリリースを受け付けるために必須）を作ります。最後に、2 つのファイルを添付して GitHub のリリース（とタグ）を作るコマンドを表示します。リリースノートは先にリポジトリの外のファイルに書いておいてください:

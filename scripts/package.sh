@@ -25,7 +25,7 @@ sh vendor/frame-apps/verify.sh
 
 # 開発用の build/ とは別のフォルダで、Release でビルドし直す
 cmake -G Ninja -S . -B "$build_dir" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
-cmake --build "$build_dir"
+cmake --build "$build_dir" --clean-first
 
 version="$("$build_dir/$name" --version | awk '{print $2}')"
 if [[ -z "$version" || "$version" == "unknown" ]]; then
