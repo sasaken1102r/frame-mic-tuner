@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.4 (2026-10-29)
 
 - Fix: the mic was sometimes far too loud, especially in the first seconds after you start speaking. SteamOS 20261015 added a second ("fallback") echo canceller that Valve's microphone tracker uses instead of the main one when the output isn't the Frame's speakers. This project's tracker turned on every filter whose name starts with `echo_cancel`, so both were in the chain and their automatic gain control was applied twice (measured on a Frame: about 5 dB more at the start of speech and about seven times as many clipped samples). The tracker now follows Valve's choice: the main echo canceller with the Frame's speakers, the fallback one (with the current output as its echo reference) with any other output, never both. Noise suppression still follows its switch for every output (Valve only uses it with the Frame's speakers), and no filters are turned on when the default mic isn't the Frame's built-in mic, as the panel says. On SteamOS versions without the fallback (before 20261015), the tracker works exactly as in 0.3.3. Takes effect after restarting the headset.
 - The header shows "In use" also while an app records from another mic set as the default. With the change above (on SteamOS 20261015 or later) no filters are turned on for that mic, and the panel used to tell "in use" only from the filters, so it said "Not in use".
