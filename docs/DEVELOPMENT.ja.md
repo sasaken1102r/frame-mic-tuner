@@ -13,13 +13,15 @@ Steam Frame（aarch64 SteamOS）で、マイクの**エコー除去**と**ノイ
 ```
 alsa_input.platform-sound.HiFi__Mic__source（2ch、デジタルマイク 2 個）
  → eq_capture / eq_source（EQ: 音質補正 ＋ 2ch→1ch）
- → echo_cancel_capture / echo_cancel_source（WebRTC のエコー除去＋自動音量調整）
+ → echo_cancel_capture / echo_cancel_source（WebRTC のエコー除去＋自動音量調整。出力が Frame のスピーカー以外のときは、予備の echo_cancel_fallback_capture / echo_cancel_fallback_source）
  → ns_capture / ns_source（ノイズ除去: 声らしさで判定して、声でない音を消す）
  → alsa_loopback_stream → alsa_loopback_device...HiFi__Mic__source（既定のマイク。アプリはここから録る）
 ```
 
-- 各段は WirePlumber の smart filter（`filter.smart = true`、`steamos.mic_filter = true`）。有効・無効は `filters` メタデータの `filter.smart.disabled`
-- SteamOS の元の動き（Valve の `/etc/wireplumber/scripts/microphone-tracker.lua`）は、録音のストリーム（`Stream/Input/Audio`）が 1 つでもあれば 3 段とも有効、0 になったら全部無効
+- 各段は WirePlumber の smart filter（`filter.smart = true`、`steamos.mic_filter = true`）。有効・無効は `filters` メタデータの `filter.smart.disabled`、行き先は `filter.smart.target`
+- SteamOS の元の動き（Valve の `/etc/wireplumber/scripts/microphone-tracker.lua`）は、録音のストリーム（`Stream/Input/Audio`）が 1 つでもあれば、既定のマイク・出力に合った段を有効にし、0 になったら全部無効
+  - 20261007 まで: 3 段とも有効
+  - 20261015 から: エコー除去の予備（`echo_cancel_fallback_source` / `_sink`）が増えた。既定のマイクと出力がどちらも内蔵（`alsa_loopback_device.alsa_input...HiFi__Mic__source` と `alsa_loopback_device.stereo.alsa_output...HiFi__Speaker__sink`）なら EQ・本体のエコー除去・ノイズ除去、そうでなければ予備のエコー除去（＋内蔵マイクなら EQ）。予備の `_sink` の行き先は既定の出力、`_source` の行き先は既定のマイクの中身の機器（ループバックの `target.object`）。**本体と予備は同時には入れない**（どちらも自動音量調整 `gain_control2` が入っているので、両方入れると 2 回かかって声が大きくなりすぎる）
 - 口の小さな音（ぺちゃくちゃ音など）は、エコー除去で大きく削られ、ノイズ除去で完全な無音にされる。イヤホンで使うならエコー除去は要らないので、切れるようにした
 
 ## 切り替えの仕組み（contrib/wireplumber）
@@ -30,9 +32,13 @@ alsa_input.platform-sound.HiFi__Mic__source（2ch、デジタルマイク 2 個�
 | `90-frame-mic.conf` | `~/.config/wireplumber/wireplumber.conf.d/90-frame-mic.conf`（`@SCRIPT_PATH@` を上のスクリプトの絶対パスに置き換える） |
 
 - `90-frame-mic.conf`: Valve の tracker（`steamos.microphone-tracker`）を `disabled` にして、自作の `frame-mic-tracker.lua` を読み込む。設定 `frame-mic.echo-cancel`（既定 true）と `frame-mic.noise-suppression`（既定 false）を定義する
-- `frame-mic-tracker.lua`: 動きは元と同じ（録音のストリームがいる間だけフィルターを入れる）。違いは、エコー除去（`echo_cancel*`）とノイズ除去（`ns_*`・`dsp_*`）をそれぞれ設定で切れること。設定を変えると、使用中のマイクにもその場で反映する（PipeWire の再起動は要らない。録音中に切り替えても音は途切れない）
+- `frame-mic-tracker.lua`: 動きは元と同じ（録音のストリームがいる間だけ、出力に合ったエコー除去を本体か予備の片方だけ入れる。予備が無い 20261007 までは出力によらず本体）。違いは 3 つ
+  - エコー除去（`echo_cancel_*`）とノイズ除去（`ns_source`）を、それぞれ設定で切れる。設定を変えると、使用中のマイクにもその場で反映する（PipeWire の再起動は要らない。録音中に切り替えても音は途切れない）
+  - ノイズ除去は、出力によらず設定どおり（Valve は出力が Frame のスピーカーのときだけ入れる）
+  - 既定のマイクが内蔵マイクでないときは、何も入れない（Valve はそのマイクにも予備のエコー除去を入れる。パネルは「ほかのマイクには処理はかからない」と案内している）
+- 0.3.3 までの `frame-mic-tracker.lua` は名前の接頭辞（`echo_cancel`）で見分けていたので、20261015 で予備も本体といっしょに入り、自動音量調整が 2 回かかっていた（話し始めの声が大きくなり、割れやすい）
 - どちらもホームフォルダの中だけ。Valve の `/etc` のファイルには触らない。入れたあとは、ヘッドセットの再起動で有効になる
-- 外すと（`./install.sh --uninstall` のあと再起動）Valve の元の動き（3 段とも有効）に戻る
+- 外すと（`./install.sh --uninstall` のあと再起動）Valve の元の動きに戻る
 - 作るときにはまったこと:
   - ノードの `steamos.mic_filter` は情報側のプロパティなので、`Constraint` に `type = "pw"` が要る。既定の `pw-global` だと 1 つも一致しない
   - Valve の tracker はイベントの source から ObjectManager を借りているが、設定の変更（`Settings.subscribe`）のときはイベントが無いので、自前の ObjectManager を持つ
@@ -107,7 +113,7 @@ SteamVR のダッシュボードの下の並びに「Mic」のアイコン（マ
 - ボタンの選択状態・使用中か・つながりは、実際の値から作る（今の出口のとき。ほかの出口を表示しているときは、覚えている値）
   - エコー除去・ノイズ除去: `wpctl settings`（全設定の一覧）の `frame-mic.*` の `Value:`
   - つながり: `pw-link -l` の実際のリンク。マイク（`alsa_input.platform-sound.HiFi__Mic__source`）から出発して、`<名前>_capture` に入り `<名前>_source` から出るフィルターをたどり、`alsa_loopback_stream.alsa_input...`（既定のマイクの手前）に着くまでを並べる。`eq` = 音質補正（英語では EQ）、`echo_cancel` = エコー除去、`ns` / `dsp` = ノイズ除去
-  - マイク使用中 = 通り道にフィルターが入っている。tracker は録音のストリーム（`Stream/Input/Audio`）が 1 つでもあると EQ を必ず入れるので、「使用中」は「tracker がフィルターを入れている」と同じ。**スピーカーの音を録るアプリ（画面録画の ffmpeg など）でも録音のストリームなので数えられる**
+  - マイク使用中 = 通り道にフィルターが入っている。tracker は録音のストリーム（`Stream/Input/Audio`）が 1 つでもあると、既定のマイクが内蔵マイクなら EQ を必ず入れるので、「使用中」は「tracker がフィルターを入れている」と同じ。**スピーカーの音を録るアプリ（画面録画の ffmpeg など）でも録音のストリームなので数えられる**
   - 未使用のときの `pw-link -l` は、マイクから `alsa_loopback_stream...` へ直接つながる形（「マイク → アプリへ」と「使っていないので処理はお休み中」）
 - パネルがダッシュボードで**開いている間は** 1 秒ごとに読み直す（外から `wpctl settings --save ...` で変えられても、1 秒以内に表示が合い、今の出口の設定として覚える）。自動起動の状態（`systemctl --user is-enabled`）は開いた直後と 5 秒おき、出口とマイクの一覧（`pw-dump`）は開いた直後と 5 秒おきと、選ぶ画面を開いたとき。閉じている間は既定の出力・入力だけを 2 秒おきに見る（下の「音の出口ごとの設定」）
 - ボタンを押したら、書く → すぐ読み直す → 表示に反映。書いた値は読み返して確かめ、違えば失敗として赤く出す

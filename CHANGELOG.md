@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fix: the mic was sometimes far too loud, especially in the first seconds after you start speaking. SteamOS 20261015 added a second ("fallback") echo canceller that Valve's microphone tracker uses instead of the main one when the output isn't the Frame's speakers. This project's tracker turned on every filter whose name starts with `echo_cancel`, so both were in the chain and their automatic gain control was applied twice (measured on a Frame: about 5 dB more at the start of speech and roughly six times as many clipped samples). The tracker now follows Valve's choice: the main echo canceller with the Frame's speakers, the fallback one (with the current output as its echo reference) with any other output, never both. On SteamOS versions without the fallback, the main one is used for every output as before. Noise suppression still follows its switch for every output (Valve only uses it with the Frame's speakers), and no filters are turned on when the default mic isn't the Frame's built-in mic, as the panel says. Takes effect after restarting the headset.
+
 ## 0.3.3 (2026-10-25)
 
 - Fix: noise suppression strength jumped back to SteamOS's default (23% / 500 ms) and that default was saved for the current output. With PipeWire 1.6 (seen on the current SteamOS beta), a value written to the noise suppressor before anything has used the mic since the headset started is kept by PipeWire and applied once the mic is used, but reading it back still shows the old value. The app took that old value for a change made in the panel. Now, when the value read right after writing is still the old one, the app shows and keeps the value it wrote, and goes back to what it reads once the reading changes (the mic is used, or the noise suppressor is set up again). If your saved strength was reset, set it once more after updating.

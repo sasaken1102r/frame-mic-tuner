@@ -80,7 +80,7 @@ if [[ $uninstall -eq 1 ]]; then
 
 The WirePlumber script is removed but still loaded until the next start of WirePlumber.
 Restart the headset when you're not playing: after that, Valve's original microphone behaviour is back
-(echo cancellation and noise suppression both on while an app uses the mic).
+(echo cancellation, and noise suppression with the Frame's speakers, on while an app uses the mic).
 Don't restart PipeWire or WirePlumber by hand while playing: SteamVR and Steam Link lose their sound
 (restarting SteamVR brings it back).
 EOF
