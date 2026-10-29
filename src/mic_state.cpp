@@ -197,11 +197,9 @@ void parseLinks(const std::string& text, MicState& state) {
         current = prefix + "_source";
     }
     if (!state.linksKnown) state.chain.clear();
-    // マイクを使うアプリがいる間だけ、tracker がフィルター（少なくとも EQ）を入れる
-    state.inUse = state.linksKnown && !state.chain.empty();
 
-    // 音を取っているノード（録音しているアプリ）: 既定のマイクから取っているものと、
-    // マイクのノードから直接取っているもの（フィルターと出力以外）
+    // 音を取っているノード（録音しているアプリ）: 既定のマイク（内蔵・外付けとも alsa_loopback_device...）から
+    // 取っているものと、マイクのノードから直接取っているもの（フィルターと出力以外）
     for (const auto& edge : edges) {
         const bool fromDevice = startsWith(edge.first, kLoopbackDevicePrefix);
         const bool fromMic = edge.first == kMicSource;
@@ -211,6 +209,9 @@ void parseLinks(const std::string& text, MicState& state) {
             state.users.push_back(to);
         }
     }
+    // マイクを使うアプリがいる間だけ、tracker がフィルター（内蔵マイクなら少なくとも EQ）を入れる。
+    // 既定のマイクが外付けのときはフィルターが入らないので、録っているアプリがいるかで見る
+    state.inUse = state.linksKnown && (!state.chain.empty() || !state.users.empty());
 }
 
 bool parseMute(const std::string& text, bool& muted) {

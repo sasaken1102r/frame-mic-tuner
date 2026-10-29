@@ -98,7 +98,7 @@ struct MicState {
     bool nsKnown = false;       ///< ノイズ除去の値が読めたか
     bool ns = false;            ///< ノイズ除去（true = オン）
     bool linksKnown = false;    ///< マイクから出力までのつながりをたどれたか
-    bool inUse = false;         ///< マイク使用中（通り道にフィルターが入っている）
+    bool inUse = false;         ///< マイク使用中（通り道にフィルターが入っているか、既定のマイクから録っているアプリがいる）
     bool muteKnown = false;     ///< 既定のマイクのミュートが読めたか
     bool muted = false;         ///< 既定のマイクがミュートされている（Steam・wpctl・aux ボタンなど、どこから入っても）
     std::vector<ChainStage> chain;   ///< マイクと出力の間に入っているフィルター（順番どおり）

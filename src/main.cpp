@@ -1223,6 +1223,29 @@ int runSelfTest() {
            state.linksKnown && state.inUse && state.chain.size() == 1 &&
                state.chain[0].kind == ChainStage::Kind::Eq);
 
+    // 既定のマイクが外付け（tracker はフィルターを入れない）で、アプリがそこから録っているとき（Frame で取ったもの）
+    const std::string externalLinks =
+        "alsa_input.platform-sound.HiFi__Mic__source:capture_FL\n"
+        "  |-> alsa_loopback_stream.alsa_input.platform-sound.HiFi__Mic__source:input_FL\n"
+        "alsa_input.usb-Samsung_USBC_Headset_20190816-00.mono-fallback:capture_MONO\n"
+        "  |-> alsa_loopback_stream.alsa_input.usb-Samsung_USBC_Headset_20190816-00.mono-fallback:input_MONO\n"
+        "alsa_loopback_device.alsa_input.usb-Samsung_USBC_Headset_20190816-00.mono-fallback:capture_MONO\n"
+        "  |-> pw-record:input_MONO\n";
+    MicState external;
+    parseLinks(externalLinks, external);
+    expect("pw-link: 外付けのマイクから録っている → フィルターなしでも使用中",
+           external.linksKnown && external.inUse && external.chain.empty() && external.users.size() == 1);
+
+    // 誰も録っていないとき（マイクから出力へ直接）
+    const std::string idleLinks =
+        "alsa_input.platform-sound.HiFi__Mic__source:capture_FL\n"
+        "  |-> alsa_loopback_stream.alsa_input.platform-sound.HiFi__Mic__source:input_FL\n"
+        "alsa_input.usb-Samsung_USBC_Headset_20190816-00.mono-fallback:capture_MONO\n"
+        "  |-> alsa_loopback_stream.alsa_input.usb-Samsung_USBC_Headset_20190816-00.mono-fallback:input_MONO\n";
+    MicState idle;
+    parseLinks(idleLinks, idle);
+    expect("pw-link: 誰も録っていない → 未使用", idle.linksKnown && !idle.inUse && idle.users.empty());
+
     // pw-dump ns_capture の出力（ノードの id と、判定の厳しさ・余韻）
     // param 名に「)"」が入るので、区切り付きの生の文字列にする
     const std::string dump = R"json([{"id": 53, "type": "PipeWire:Interface:Node", "info": {
