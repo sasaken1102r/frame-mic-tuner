@@ -11,6 +11,8 @@
 --     wpctl settings --save frame-mic.noise-suppression true  # ノイズ除去を入れる
 --   設定を変えると、使用中のマイクにもその場で反映する（PipeWire の再起動は要らない）
 -- - 既定のマイクが Frame の内蔵マイクでないときは、何も入れない（Valve はそのマイクにエコー除去の予備を入れる）
+-- エコー除去の予備が無い SteamOS（20261015 より前）では、0.3.3 までと同じく、名前の頭で見分けて全部の段を入れる
+-- （そのころの Valve の tracker も、マイクを使うアプリがいれば全部入れていた）
 
 local BUILTIN_SOURCE = "alsa_input.platform-sound.HiFi__Mic__source"
 local BUILTIN_SINK = "alsa_output.platform-sound.HiFi__Speaker__sink"
@@ -45,14 +47,14 @@ local function builtin_source ()
   return state.source == BUILTIN_SOURCE_LOOPBACK
 end
 
--- エコー除去の予備があるか（SteamOS 20261015 から。それより前は本体だけで、出力によらず本体を入れていた）
+-- エコー除去の予備があるか（SteamOS 20261015 から）
 local function has_fallback ()
   return filters_om:lookup { Constraint { "node.name", "=", "echo_cancel_fallback_source" } } ~= nil
 end
 
--- エコー除去の本体を使う: 内蔵マイクで、出力が Frame のスピーカー（予備が無いなら出力によらず）
+-- エコー除去の本体を使う: 内蔵マイクで、出力が Frame のスピーカー
 local function use_main_echo_cancel ()
-  return builtin_source () and (state.sink == BUILTIN_SINK_LOOPBACK or not has_fallback ())
+  return builtin_source () and state.sink == BUILTIN_SINK_LOOPBACK
 end
 
 -- エコー除去の予備を使う: 内蔵マイクで、出力がほかの機器（イヤホン・Bluetooth など）
@@ -60,7 +62,7 @@ local function use_fallback_echo_cancel ()
   return builtin_source () and state.sink ~= BUILTIN_SINK_LOOPBACK
 end
 
--- 段ごとの決まり。use = 今の既定のマイク・出力でこの段を入れるか、key = 切れる設定。
+-- 予備があるときの段ごとの決まり。use = 今の既定のマイク・出力でこの段を入れるか、key = 切れる設定。
 -- ここに無いフィルターは Valve と同じく入れない
 -- （エコー除去は本体と予備の 2 段があり、Valve はどちらか 1 つしか入れない。両方入れると自動音量調整が 2 回かかる）
 local RULES = {
@@ -71,6 +73,18 @@ local RULES = {
   echo_cancel_fallback_sink = { use = use_fallback_echo_cancel, key = "frame-mic.echo-cancel" },
   ns_source = { use = builtin_source, key = "frame-mic.noise-suppression" },
 }
+
+-- 予備が無いときの決まり（0.3.3 まで）: ノード名の頭から、どの設定でオン・オフするかを決める
+-- 戻り値: 設定のキー。nil なら常にマイクの使用状況だけで決める（EQ など）
+local function legacy_setting_for (name)
+  if name:find ("^echo_cancel") then
+    return "frame-mic.echo-cancel"
+  end
+  if name:find ("^ns_") or name:find ("^dsp_") then
+    return "frame-mic.noise-suppression"
+  end
+  return nil
+end
 
 -- 既定の名前（{ "name": "..." }）。無ければ ""
 local function default_name (defaults, key)
@@ -115,9 +129,15 @@ local function apply_node (metadata, node)
     end
   end
 
-  local rule = RULES [name]
-  local enabled = state.stream_count > 0 and rule ~= nil and rule.use ()
-      and (rule.key == nil or Settings.get_boolean (rule.key))
+  local enabled
+  if has_fallback () then
+    local rule = RULES [name]
+    enabled = state.stream_count > 0 and rule ~= nil and rule.use ()
+        and (rule.key == nil or Settings.get_boolean (rule.key))
+  else
+    local key = legacy_setting_for (name)
+    enabled = state.stream_count > 0 and (key == nil or Settings.get_boolean (key))
+  end
   metadata:set (node_id, "filter.smart.disabled", "Spa:String:JSON",
       enabled and "false" or "true")
 end

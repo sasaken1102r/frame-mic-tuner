@@ -32,11 +32,11 @@ alsa_input.platform-sound.HiFi__Mic__source（2ch、デジタルマイク 2 個�
 | `90-frame-mic.conf` | `~/.config/wireplumber/wireplumber.conf.d/90-frame-mic.conf`（`@SCRIPT_PATH@` を上のスクリプトの絶対パスに置き換える） |
 
 - `90-frame-mic.conf`: Valve の tracker（`steamos.microphone-tracker`）を `disabled` にして、自作の `frame-mic-tracker.lua` を読み込む。設定 `frame-mic.echo-cancel`（既定 true）と `frame-mic.noise-suppression`（既定 false）を定義する
-- `frame-mic-tracker.lua`: 動きは元と同じ（録音のストリームがいる間だけ、出力に合ったエコー除去を本体か予備の片方だけ入れる。予備が無い 20261007 までは出力によらず本体）。違いは 3 つ
+- `frame-mic-tracker.lua`: 動きは元と同じ（録音のストリームがいる間だけ、出力に合ったエコー除去を本体か予備の片方だけ入れる）。予備が無い 20261007 までは、0.3.3 までと全く同じ（名前の頭で見分けて、EQ はいつも、`echo_cancel*` と `ns_*`・`dsp_*` は設定どおりに入れる。既定のマイク・出力は見ない）。予備があるときの Valve との違いは 3 つ
   - エコー除去（`echo_cancel_*`）とノイズ除去（`ns_source`）を、それぞれ設定で切れる。設定を変えると、使用中のマイクにもその場で反映する（PipeWire の再起動は要らない。録音中に切り替えても音は途切れない）
   - ノイズ除去は、出力によらず設定どおり（Valve は出力が Frame のスピーカーのときだけ入れる）
   - 既定のマイクが内蔵マイクでないときは、何も入れない（Valve はそのマイクにも予備のエコー除去を入れる。パネルは「ほかのマイクには処理はかからない」と案内している）
-- 開発者向けの DSP 版（`steamvr dspaec 1`、EQ・ノイズ除去・エコー除去が 1 つになった `dsp_source`）は入れない（Valve の今の tracker も入れない）。その状態ではノイズ除去のスイッチは効かない
+- 開発者向けの DSP 版（`steamvr dspaec 1`、EQ・ノイズ除去・エコー除去が 1 つになった `dsp_source`）は、予備があるときは入れない（Valve の今の tracker も入れない）。その状態ではノイズ除去のスイッチは効かない（予備が無い SteamOS では前と同じく、ノイズ除去のスイッチで入る）
 - 0.3.3 までの `frame-mic-tracker.lua` は名前の接頭辞（`echo_cancel`）で見分けていたので、20261015 で予備も本体といっしょに入り、自動音量調整が 2 回かかっていた（話し始めの声が大きくなり、割れやすい）
 - どちらもホームフォルダの中だけ。Valve の `/etc` のファイルには触らない。入れたあとは、ヘッドセットの再起動で有効になる
 - 外すと（`./install.sh --uninstall` のあと再起動）Valve の元の動きに戻る
