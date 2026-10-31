@@ -2,8 +2,7 @@
 -- Steam Frame のマイクのフィルターを、設定に合わせてオン・オフする WirePlumber スクリプト。
 -- Valve の /etc/wireplumber/scripts/microphone-tracker.lua の代わりに動く（元のファイルは書き換えない）。
 --
--- 元のスクリプトと同じく、マイクを使うアプリがいる間だけフィルターを有効にする。エコー除去は、既定の出力が
--- Frame のスピーカーなら本体（echo_cancel_*）、ほかの出力なら予備（echo_cancel_fallback_*）のどちらか 1 つだけ。
+-- 元のスクリプトと同じく、マイクを使うアプリがいる間だけフィルターを有効にする。
 -- 元と違うところ:
 -- - エコー除去とノイズ除去を、それぞれ WirePlumber の設定で切れる（ノイズ除去は出力によらず設定どおり。
 --   Valve は Frame のスピーカーのときだけ入れる）
@@ -11,18 +10,20 @@
 --     wpctl settings --save frame-mic.noise-suppression true  # ノイズ除去を入れる
 --   設定を変えると、使用中のマイクにもその場で反映する（PipeWire の再起動は要らない）
 -- - 既定のマイクが Frame の内蔵マイクでないときは、何も入れない（Valve はそのマイクにエコー除去の予備を入れる）
+-- - エコー除去は、出力によらず本体（echo_cancel_*）だけを使い、予備（echo_cancel_fallback_*、SteamOS 20261015 から）は
+--   使わない。Valve は Frame のスピーカー以外の出力で予備を使い、その消す音の側を今の出力の手前に入れるが、
+--   USB-C のドングルではそこから出力へのつながりが動き出せず、音が全部出なくなった（0.3.4）。予備のマイクの側だけを
+--   使うと、消す音の側が動かないのでマイクが無音になる。本体の消す音の側は Frame のスピーカーの手前に入る
+--   （20261015 より前と同じ）。本体と予備を両方入れると、自動音量調整が 2 回かかってマイクの声が大きくなりすぎる
 -- エコー除去の予備が無い SteamOS（20261015 より前）では、0.3.3 までと同じく、名前の頭で見分けて全部の段を入れる
 -- （そのころの Valve の tracker も、マイクを使うアプリがいれば全部入れていた）
 
 local BUILTIN_SOURCE = "alsa_input.platform-sound.HiFi__Mic__source"
-local BUILTIN_SINK = "alsa_output.platform-sound.HiFi__Speaker__sink"
 local BUILTIN_SOURCE_LOOPBACK = "alsa_loopback_device." .. BUILTIN_SOURCE
-local BUILTIN_SINK_LOOPBACK = "alsa_loopback_device.stereo." .. BUILTIN_SINK
 
 local state = {
   stream_count = 0,
   source = "",  -- 既定のマイク（default.audio.source の名前）
-  sink = "",    -- 既定の出力（default.audio.sink の名前）
 }
 
 -- フィルターのノード（Valve の設定で steamos.mic_filter = true が付いているもの）
@@ -34,7 +35,7 @@ local filters_om = ObjectManager {
   }
 }
 
--- フィルターの有効・無効と行き先を書き込む先（filters）と、既定のマイク・出力（default）
+-- フィルターの有効・無効を書き込む先（filters）と、既定のマイク（default）
 local metadata_om = ObjectManager {
   Interest {
     type = "metadata",
@@ -52,25 +53,12 @@ local function has_fallback ()
   return filters_om:lookup { Constraint { "node.name", "=", "echo_cancel_fallback_source" } } ~= nil
 end
 
--- エコー除去の本体を使う: 内蔵マイクで、出力が Frame のスピーカー
-local function use_main_echo_cancel ()
-  return builtin_source () and state.sink == BUILTIN_SINK_LOOPBACK
-end
-
--- エコー除去の予備を使う: 内蔵マイクで、出力がほかの機器（イヤホン・Bluetooth など）
-local function use_fallback_echo_cancel ()
-  return builtin_source () and state.sink ~= BUILTIN_SINK_LOOPBACK
-end
-
--- 予備があるときの段ごとの決まり。use = 今の既定のマイク・出力でこの段を入れるか、key = 切れる設定。
--- ここに無いフィルターは Valve と同じく入れない
--- （エコー除去は本体と予備の 2 段があり、Valve はどちらか 1 つしか入れない。両方入れると自動音量調整が 2 回かかる）
+-- 予備があるときの段ごとの決まり。use = 今の既定のマイクでこの段を入れるか、key = 切れる設定。
+-- ここに無いフィルター（エコー除去の予備）は入れない
 local RULES = {
   eq_source = { use = builtin_source },
-  echo_cancel_source = { use = use_main_echo_cancel, key = "frame-mic.echo-cancel" },
-  echo_cancel_sink = { use = use_main_echo_cancel, key = "frame-mic.echo-cancel" },
-  echo_cancel_fallback_source = { use = use_fallback_echo_cancel, key = "frame-mic.echo-cancel" },
-  echo_cancel_fallback_sink = { use = use_fallback_echo_cancel, key = "frame-mic.echo-cancel" },
+  echo_cancel_source = { use = builtin_source, key = "frame-mic.echo-cancel" },
+  echo_cancel_sink = { use = builtin_source, key = "frame-mic.echo-cancel" },
   ns_source = { use = builtin_source, key = "frame-mic.noise-suppression" },
 }
 
@@ -96,38 +84,24 @@ local function default_name (defaults, key)
   return type (parsed) == "table" and parsed.name or ""
 end
 
--- 既定のマイク・出力を読み直す
+-- 既定のマイクを読み直す
 local function read_defaults ()
   local defaults = metadata_om:lookup { Constraint { "metadata.name", "=", "default" } }
   if defaults == nil then
     return
   end
   local source = default_name (defaults, "default.audio.source")
-  local sink = default_name (defaults, "default.audio.sink")
-  -- 内蔵のマイク・スピーカーのループバックがまだできていない間は、前の値のまま（Valve と同じ）
-  if source == BUILTIN_SOURCE or sink == BUILTIN_SINK then
+  -- 内蔵マイクのループバックがまだできていない間は、前の値のまま（Valve と同じ）
+  if source == BUILTIN_SOURCE then
     return
   end
   state.source = source
-  state.sink = sink
 end
 
 -- 1 つのフィルターを今の状態に合わせる
 local function apply_node (metadata, node)
   local name = node.properties ["node.name"] or ""
   local node_id = node.properties ["object.id"]
-
-  -- エコー除去の予備の消す音（スピーカーへの音）は、今の出力から取る（Valve と同じ）。
-  -- Frame のスピーカーのときは設定の既定のまま（入れないので、どちらでもよい）
-  if name == "echo_cancel_fallback_sink" then
-    local value = nil
-    if state.sink ~= "" and state.sink ~= BUILTIN_SINK_LOOPBACK then
-      value = "{ node.name = \"" .. state.sink .. "\" }"
-    end
-    if metadata:find (node_id, "filter.smart.target") ~= value then
-      metadata:set (node_id, "filter.smart.target", "Spa:String:JSON", value)
-    end
-  end
 
   local enabled
   if has_fallback () then
@@ -174,7 +148,7 @@ SimpleEventHook {
     EventInterest {
       Constraint { "event.type", "=", "metadata-changed" },
       Constraint { "metadata.name", "=", "default" },
-      Constraint { "event.subject.key", "c", "default.audio.source", "default.audio.sink" },
+      Constraint { "event.subject.key", "=", "default.audio.source" },
     }
   },
   execute = function (event)

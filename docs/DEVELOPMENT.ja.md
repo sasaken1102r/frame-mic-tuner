@@ -13,7 +13,7 @@ Steam Frame（aarch64 SteamOS）で、マイクの**エコー除去**と**ノイ
 ```
 alsa_input.platform-sound.HiFi__Mic__source（2ch、デジタルマイク 2 個）
  → eq_capture / eq_source（EQ: 音質補正 ＋ 2ch→1ch）
- → echo_cancel_capture / echo_cancel_source（WebRTC のエコー除去＋自動音量調整。出力が Frame のスピーカー以外のときは、予備の echo_cancel_fallback_capture / echo_cancel_fallback_source）
+ → echo_cancel_capture / echo_cancel_source（WebRTC のエコー除去＋自動音量調整。Valve の元の動きでは、出力が Frame のスピーカー以外のときは予備の echo_cancel_fallback_capture / echo_cancel_fallback_source。このアプリの tracker は予備を使わない）
  → ns_capture / ns_source（ノイズ除去: 声らしさで判定して、声でない音を消す）
  → alsa_loopback_stream → alsa_loopback_device...HiFi__Mic__source（既定のマイク。アプリはここから録る）
 ```
@@ -32,12 +32,15 @@ alsa_input.platform-sound.HiFi__Mic__source（2ch、デジタルマイク 2 個�
 | `90-frame-mic.conf` | `~/.config/wireplumber/wireplumber.conf.d/90-frame-mic.conf`（`@SCRIPT_PATH@` を上のスクリプトの絶対パスに置き換える） |
 
 - `90-frame-mic.conf`: Valve の tracker（`steamos.microphone-tracker`）を `disabled` にして、自作の `frame-mic-tracker.lua` を読み込む。設定 `frame-mic.echo-cancel`（既定 true）と `frame-mic.noise-suppression`（既定 false）を定義する
-- `frame-mic-tracker.lua`: 動きは元と同じ（録音のストリームがいる間だけ、出力に合ったエコー除去を本体か予備の片方だけ入れる）。予備が無い 20261007 までは、0.3.3 までと全く同じ（名前の頭で見分けて、EQ はいつも、`echo_cancel*` と `ns_*`・`dsp_*` は設定どおりに入れる。既定のマイク・出力は見ない）。予備があるときの Valve との違いは 3 つ
+- `frame-mic-tracker.lua`: 録音のストリームがいる間だけ段を入れるのは元と同じ。予備が無い 20261007 までは、0.3.3 までと全く同じ（名前の頭で見分けて、EQ はいつも、`echo_cancel*` と `ns_*`・`dsp_*` は設定どおりに入れる。既定のマイク・出力は見ない）。予備があるときの Valve との違いは 4 つ
   - エコー除去（`echo_cancel_*`）とノイズ除去（`ns_source`）を、それぞれ設定で切れる。設定を変えると、使用中のマイクにもその場で反映する（PipeWire の再起動は要らない。録音中に切り替えても音は途切れない）
   - ノイズ除去は、出力によらず設定どおり（Valve は出力が Frame のスピーカーのときだけ入れる）
   - 既定のマイクが内蔵マイクでないときは、何も入れない（Valve はそのマイクにも予備のエコー除去を入れる。パネルは「ほかのマイクには処理はかからない」と案内している）
+  - エコー除去は、出力によらず本体（`echo_cancel_source` / `_sink`）だけを入れ、予備は使わない。本体の `_sink` の行き先は設定の既定（Frame のスピーカー）なので、ほかの出力では消す音がほぼ無音になるだけで、マイクの音はふつうに通る（20261007 までと同じ形）。予備を使えない理由は 2 つ（Frame と USB-C のドングル AB13X で確認）
+    - 予備の `_sink` を Valve と同じく今の出力の手前に入れると、`echo_cancel_fallback_playback` から出力へのつながりが動き出さず（リンクが paused のまま、WirePlumber のログに `link failed: 2 of 2 PipeWire links failed to activate`）、その出力の音が全部出なくなる（0.3.4）
+    - 予備の `_source` だけを入れて `_sink` を入れないと、消す音の側が動かないので、`echo_cancel_fallback_source` の出す音が全部 0 になる（pw-top の ERR が増え続ける）
 - 開発者向けの DSP 版（`steamvr dspaec 1`、EQ・ノイズ除去・エコー除去が 1 つになった `dsp_source`）は、予備があるときは入れない（Valve の今の tracker も入れない）。その状態ではノイズ除去のスイッチは効かない（予備が無い SteamOS では前と同じく、ノイズ除去のスイッチで入る）
-- 0.3.3 までの `frame-mic-tracker.lua` は名前の接頭辞（`echo_cancel`）で見分けていたので、20261015 で予備も本体といっしょに入り、自動音量調整が 2 回かかっていた（話し始めの声が大きくなり、割れやすい）
+- 0.3.3 までの `frame-mic-tracker.lua` は名前の接頭辞（`echo_cancel`）で見分けていたので、20261015 で予備も本体といっしょに入り、自動音量調整が 2 回かかっていた（話し始めの声が大きくなり、割れやすい）。0.3.4 は Valve と同じく出力で本体と予備を選んだが、上の 1 つ目の理由で、Frame のスピーカー以外の出力でエコー除去がオンだと、マイクを使うアプリがいる間その出力の音が出なかった
 - どちらもホームフォルダの中だけ。Valve の `/etc` のファイルには触らない。入れたあとは、ヘッドセットの再起動で有効になる
 - 外すと（`./install.sh --uninstall` のあと再起動）Valve の元の動きに戻る
 - 作るときにはまったこと:
