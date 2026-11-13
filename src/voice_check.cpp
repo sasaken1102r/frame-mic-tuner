@@ -64,7 +64,9 @@ void buildWave(VoiceClip& clip) {
 
 float peakToDb(float peak) {
     if (peak <= 1e-6f) return -120.0f;
-    return 20.0f * std::log10(peak);
+    // double の log10 で計算する。glibc 2.43 の見出しでは float の log10f が新しい版（GLIBC_2.43）につながり、
+    // 安定版 SteamOS（glibc 2.39）で起動しなくなるため
+    return static_cast<float>(20.0 * std::log10(static_cast<double>(peak)));
 }
 
 VoiceCheck::~VoiceCheck() {
