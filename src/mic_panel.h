@@ -42,7 +42,7 @@ enum class PanelAction {
     NsVadSlider,      ///< 判定の厳しさのバー（押したところへ飛び、そのままドラッグ）
     NsGraceSlider,    ///< 余韻のバー
     NsReset,          ///< 標準（SteamOS の既定 23% / 500ms）に戻す
-    UndoSwitch,       ///< 自動で切り替えた知らせの「元に戻す」
+    UndoSwitch,      ///< 自動で切り替えた知らせの「元に戻す」
     UseBuiltinMic,    ///< 「Frame 内蔵マイクに戻す」
     Record,           ///< 録音の開始・停止
     Play,             ///< 履歴の再生・停止（index = 履歴の何件目か。新しい順）
@@ -51,6 +51,8 @@ enum class PanelAction {
     OutputView,       ///< 出口の行: その出口の設定を表示する（key。パネルの中で切り替えて閉じる）
     OutputUse,        ///< 「ここから音を出す」（key。既定の出力にする）
     OutputForget,     ///< 「忘れる」（key。つながっていない出口の設定を消す）
+    KeepAwakeOn,      ///< 出口の行の「頭切れを防ぐ」: オン（key。その出口の keepAwake だけを変える）
+    KeepAwakeOff,     ///< 出口の行の「頭切れを防ぐ」: オフ（key）
     MicUse,           ///< 「このマイクを使う」（key。既定の入力にする）
     // ---- アプリと更新 ----
     UpdateCheckNow,   ///< 「今すぐ確かめる」
@@ -278,9 +280,10 @@ public:
     /**
      * 確認用（--self-test）: 最後に描いたときのボタンの矩形。
      * @param action ボタンの操作
+     * @param key 一覧の行なら、そのキー（空なら最初に見つかったもの）
      * @return 矩形（無ければ空）
      */
-    frame_ui::Rect buttonRect(PanelAction action) const;
+    frame_ui::Rect buttonRect(PanelAction action, const std::string& key = "") const;
 
     // ---- 見た目の確認用（--dump-png） ----
     /** 「もう一度押すと終了」の状態にする。 */

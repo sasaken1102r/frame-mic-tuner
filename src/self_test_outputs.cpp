@@ -2,12 +2,15 @@
 #include "self_test.h"
 
 #include "config.h"
+#include "keep_awake.h"
 #include "output_sync.h"
 #include "outputs.h"
 
 #include <unistd.h>
 
 #include <cstdlib>
+#include <fstream>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -320,5 +323,121 @@ void outputSelfTests(const Expect& expect) {
         ::unlink(path);
         Config fresh;
         expect("設定ファイル: outputs が無い（前の版）ときは移し替えの印が立たない", !fresh.outputsSaved);
+    }
+
+    // ---- 音の頭切れを防ぐ（keep_awake.h） ----
+    expect("頭切れ防止の既定: AB13X の USB の出口だけオン（ほかの USB・Frame のスピーカー・Bluetooth・ほかの alsa はオフ）。"
+           "初めての出口も同じ",
+           keepAwakeDefault(kAb13xKey) && !keepAwakeDefault("alsa_output.usb-Samsung_USBC_Headset_20190816-00.analog-stereo") &&
+               !keepAwakeDefault(kBuiltinSpeakerKey) &&
+               !keepAwakeDefault("bluez_output.AA_BB_CC_DD_EE_FF") &&
+               !keepAwakeDefault("alsa_output.pci-0000_00_1f.3.analog-stereo") && firstProfile(kAb13xKey, "").keepAwake &&
+               !firstProfile(kBuiltinSpeakerKey, "").keepAwake &&
+               !firstProfile("bluez_output.AA_BB_CC_DD_EE_FF", "").keepAwake);
+    {
+        // 設定ファイルの往復: 既定と逆の値（AB13X をオフ、Bluetooth をオン）を保存して読み直すと同じ
+        char path[] = "/tmp/frame-mic-tuner-selftest-keepawake-XXXXXX";
+        const int fd = ::mkstemp(path);
+        if (fd >= 0) ::close(fd);
+        Config saved;
+        saved.outputsSaved = true;
+        OutputProfile usb = firstProfile(kAb13xKey, "AB13X USB Audio");
+        usb.keepAwake = false;
+        OutputProfile bluetooth = firstProfile("bluez_output.AA_BB_CC_DD_EE_FF", "WH-1000XM4");
+        bluetooth.keepAwake = true;
+        saved.outputs[kAb13xKey] = usb;
+        saved.outputs["bluez_output.AA_BB_CC_DD_EE_FF"] = bluetooth;
+        saved.outputs[kBuiltinSpeakerKey] = firstProfile(kBuiltinSpeakerKey, "Built-in Audio");
+        std::string error;
+        std::vector<std::string> warnings;
+        Config loaded;
+        const bool ok = fd >= 0 && saveConfig(path, saved, error) && loadConfig(path, loaded, warnings, error);
+        expect("設定ファイル: 頭切れ防止（AB13X オフ・Bluetooth オン・スピーカー オフ）を保存して読み直すと同じ",
+               ok && warnings.empty() && loaded.outputs.size() == 3 && !loaded.outputs[kAb13xKey].keepAwake &&
+                   loaded.outputs["bluez_output.AA_BB_CC_DD_EE_FF"].keepAwake &&
+                   !loaded.outputs[kBuiltinSpeakerKey].keepAwake);
+
+        // キーが無い（前の版で保存した出口）: AB13X はオン、ほかはオフ
+        {
+            std::ofstream file(path, std::ios::binary | std::ios::trunc);
+            file << "{\"outputs\": {"
+                 << "\"" << kAb13xKey << "\": {\"name\": \"AB13X USB Audio\", \"kind\": \"earphones\", \"echo\": false, \"ns\": false},"
+                 << "\"bluez_output.AA_BB_CC_DD_EE_FF\": {\"name\": \"WH-1000XM4\", \"kind\": \"earphones\", \"echo\": false, \"ns\": false},"
+                 << "\"" << kBuiltinSpeakerKey << "\": {\"name\": \"Built-in Audio\", \"kind\": \"speaker\", \"echo\": true, \"ns\": false}"
+                 << "}}\n";
+        }
+        Config old;
+        warnings.clear();
+        const bool oldOk = loadConfig(path, old, warnings, error);
+        expect("設定ファイル: keep_awake が無い出口は既定（AB13X はオン、Bluetooth・スピーカーはオフ）",
+               oldOk && warnings.empty() && old.outputs.size() == 3 && old.outputs[kAb13xKey].keepAwake &&
+                   !old.outputs["bluez_output.AA_BB_CC_DD_EE_FF"].keepAwake && !old.outputs[kBuiltinSpeakerKey].keepAwake);
+        ::unlink(path);
+    }
+    {
+        // どの出口に流すか。AB13X を既定の出力にしたとき、既定のノードは Valve のラッパー（SteamOS 20261103 の形）
+        AudioDevices usb = frame;
+        usb.defaultSinkName = "alsa_loopback_device.alsa_output.usb-Generic_AB13X_USB_Audio_202405280846-00.analog-stereo";
+        usb.defaultOutputKey = endpointKey(usb.defaultSinkName);
+        std::map<std::string, OutputProfile> outputs;
+        expect("流す先: AB13X が既定で、まだ覚えていない出口 → 既定どおりオンで、既定の出力のノード（ラッパー）へ",
+               usb.defaultOutputKey == kAb13xKey && keepAwakeTarget(usb, outputs) == usb.defaultSinkName);
+        outputs[kAb13xKey] = firstProfile(kAb13xKey, "AB13X USB Audio");
+        const bool onTarget = keepAwakeTarget(usb, outputs) == usb.defaultSinkName;
+        outputs[kAb13xKey].keepAwake = false;
+        expect("流す先: USB で覚えた設定がオンなら流し、オフにしたら流さない", onTarget && keepAwakeTarget(usb, outputs).empty());
+
+        // Frame のスピーカー: 覚えた設定を手で true にしていても流さない
+        std::map<std::string, OutputProfile> speakerOn;
+        speakerOn[kBuiltinSpeakerKey] = firstProfile(kBuiltinSpeakerKey, "Built-in Audio");
+        speakerOn[kBuiltinSpeakerKey].keepAwake = true;
+        expect("流す先: Frame のスピーカーが既定なら流さない（設定がオンでも）",
+               keepAwakeTarget(frame, std::map<std::string, OutputProfile>()).empty() &&
+                   keepAwakeTarget(frame, speakerOn).empty());
+
+        // 既定が分からない・既定のノード名が無い・フィルター（仮想の出口）が既定
+        AudioDevices unknown = usb;
+        unknown.defaultsKnown = false;
+        AudioDevices noName = usb;
+        noName.defaultSinkName.clear();
+        AudioDevices filter = usb;
+        filter.defaultSinkName = "echo_cancel_sink";
+        filter.defaultOutputKey = "echo_cancel_sink";
+        outputs[kAb13xKey].keepAwake = true;
+        expect("流す先: 既定が分からない・名前が無い・フィルターが既定のときは流さない",
+               keepAwakeTarget(unknown, outputs).empty() && keepAwakeTarget(noName, outputs).empty() &&
+                   keepAwakeTarget(filter, outputs).empty());
+
+        // Bluetooth: 既定はオフ。オンにすれば、既定の出力のノード（プロファイル番号付き）へ
+        AudioDevices bt = parseAudioDevices(kPwDumpAb13xAndBluetooth);
+        bt.defaultSinkName = "bluez_output.AA_BB_CC_DD_EE_FF.1";
+        bt.defaultOutputKey = endpointKey(bt.defaultSinkName);
+        std::map<std::string, OutputProfile> btOutputs;
+        const bool btOff = keepAwakeTarget(bt, btOutputs).empty();
+        btOutputs["bluez_output.AA_BB_CC_DD_EE_FF"] = firstProfile("bluez_output.AA_BB_CC_DD_EE_FF", "WH-1000XM4");
+        btOutputs["bluez_output.AA_BB_CC_DD_EE_FF"].keepAwake = true;
+        expect("流す先: Bluetooth は既定で流さず、オンにすれば既定の出力のノードへ",
+               btOff && keepAwakeTarget(bt, btOutputs) == "bluez_output.AA_BB_CC_DD_EE_FF.1");
+    }
+    {
+        // マイクの設定の取り込み（外からの変化・出口の切り替え）では、頭切れ防止は変えない
+        FakeWorker worker;
+        OutputSync sync(worker.request());
+        Config config;
+        config.outputsSaved = true;
+        AudioDevices usb = frame;
+        usb.defaultSinkName = kAb13xKey;
+        usb.defaultOutputKey = kAb13xKey;
+        OutputProfile ab13x = firstProfile(kAb13xKey, "AB13X USB Audio");
+        ab13x.keepAwake = false;
+        config.outputs[kAb13xKey] = ab13x;
+        MicState state = stateWith(usb, false, false);
+        sync.update(state, config, "2026-10-10");
+        state.writesDone = worker.ticket;
+        state.ns = true;
+        sync.update(state, config, "2026-10-10");
+        expect("頭切れ防止: 外から変わったマイクの設定を覚えても、頭切れ防止（オフ）はそのまま",
+               config.outputs[kAb13xKey].ns && !config.outputs[kAb13xKey].keepAwake &&
+                   config.outputs[kAb13xKey].sameSettings(liveProfile(state, config.outputs[kAb13xKey])));
     }
 }

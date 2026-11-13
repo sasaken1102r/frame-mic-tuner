@@ -382,7 +382,12 @@ OutputProfile firstProfile(const std::string& key, const std::string& name) {
     profile.ns = false;
     profile.nsVad = kNsVadDefault;
     profile.nsGrace = kNsGraceDefault;
+    profile.keepAwake = keepAwakeDefault(key);
     return profile;
+}
+
+bool keepAwakeDefault(const std::string& key) {
+    return startsWith(key, "alsa_output.usb-") && key.find("_AB13X_") != std::string::npos;
 }
 
 std::string todayText() {

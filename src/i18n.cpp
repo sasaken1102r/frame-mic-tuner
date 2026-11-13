@@ -115,6 +115,9 @@ const UiText kJapanese = {
     "ここから音を出す", "忘れる",
     "新しい出口は、Frame のスピーカーなら「スピーカー」、それ以外は「イヤホン」の設定から始めます。"
     "「ここから音を出す」は SteamVR の音声の設定と同じものを切り替えます。多いときはスティックかドラッグで送れます",
+    "頭切れを防ぐ",
+    "頭切れを防ぐ：無音のときにアンプを切るアダプター向け。聞こえない音を流し続けるので、静かなときに小さくサーと聞こえることがあり、"
+    "電池も少し使います",
     // 使うマイク
     "使うマイク", "エコー除去・ノイズ除去がかかるのは、Frame の内蔵マイクだけです", "エコー除去・ノイズ除去がかかります",
     "処理はかかりません（そのままアプリへ）", "このマイクを使う",
@@ -195,6 +198,9 @@ const UiText kEnglish = {
     "Play sound here", "Forget",
     "New outputs start from the Speaker setting for the Frame speakers and from Earphones for anything else. "
     "\"Play sound here\" changes the same output as SteamVR's audio settings. Scroll a long list with the stick or by dragging",
+    "Stop cut-off",
+    "Stop cut-off: for adapters that turn their amp off during silence. It keeps playing an inaudible tone, so you may hear "
+    "a faint hiss when it's quiet, and it uses a little battery",
     // Mic to use
     "Mic to use", "Echo cancel and the noise filter only work on the Frame's built-in mic",
     "Echo cancel and noise filter apply", "No processing (straight to apps)", "Use this mic",
@@ -274,6 +280,8 @@ const UiText kSimplifiedChinese = {
     "从这里输出", "忘记",
     "新的输出：Frame 扬声器从“扬声器”的设置开始，其他从“耳机”的设置开始。"
     "“从这里输出”切换的是与 SteamVR 音频设置相同的输出。列表较长时可用摇杆或拖动来滚动",
+    "防止开头被切",
+    "防止开头被切：适用于无声时会关闭功放的转接器。会持续播放听不见的声音，安静时可能听到轻微的沙沙声，也会多耗一点电",
     // 使用的麦克风
     "使用的麦克风", "回声消除和噪声抑制只对 Frame 内置麦克风生效", "会进行回声消除和噪声抑制",
     "不做处理（直接传给应用）", "使用这个麦克风",
@@ -355,6 +363,9 @@ const UiText kGerman = {
     "Hier wiedergeben", "Vergessen",
     "Neue Ausgänge starten bei den Frame-Lautsprechern mit der Lautsprecher-Einstellung und sonst mit Ohrhörer. "
     "\"Hier wiedergeben\" wechselt denselben Ausgang wie die Audioeinstellung von SteamVR. Lange Listen mit dem Stick oder durch Ziehen scrollen",
+    "Tonabriss verhindern",
+    "Tonabriss verhindern: für Adapter, die in Stille ihren Verstärker abschalten. Spielt ständig einen unhörbaren Ton – "
+    "in ruhigen Momenten ist evtl. ein leises Rauschen zu hören, und es braucht etwas Akku",
     // Mikrofon
     "Mikrofon wählen", "Echofilter und Rauschfilter gelten nur für das eingebaute Frame-Mikrofon",
     "Echofilter und Rauschfilter sind aktiv", "Keine Verarbeitung (direkt zu Apps)", "Mikrofon nutzen",
@@ -436,6 +447,9 @@ const UiText kFrench = {
     "Jouer le son ici", "Oublier",
     "Les nouvelles sorties partent du réglage Haut-parleur pour les haut-parleurs Frame, et du réglage Écouteurs pour le reste. "
     "« Jouer le son ici » change la même sortie que les réglages audio de SteamVR. Fais défiler une longue liste au stick ou en glissant",
+    "Éviter les coupures",
+    "Éviter les coupures : pour les adaptateurs qui coupent leur ampli pendant les silences. Un son inaudible est joué en continu : "
+    "un léger souffle peut s'entendre au calme, et cela utilise un peu la batterie",
     // Micro
     "Micro à utiliser", "L'annulation d'écho et le filtre de bruit ne valent que pour le micro intégré du Frame",
     "Annulation d'écho et filtre de bruit actifs", "Aucun traitement (direct vers les apps)", "Utiliser ce micro",
@@ -517,6 +531,9 @@ const UiText kSpanish = {
     "Reproducir aquí", "Olvidar",
     "Las salidas nuevas empiezan con el ajuste de altavoz en los altavoces de Frame y con auriculares en lo demás. "
     "\"Reproducir aquí\" cambia la misma salida que el audio de SteamVR. Desplaza una lista larga con el stick o arrastrando",
+    "Evitar cortes",
+    "Evitar cortes: para adaptadores que apagan su amplificador en silencio. Reproduce un tono inaudible continuo, así que en "
+    "silencio puede oírse un leve siseo, y gasta algo de batería",
     // Micrófono
     "Micrófono a usar", "La cancelación de eco y el filtro de ruido solo actúan en el micrófono integrado de Frame",
     "Se aplican eco y filtro de ruido", "Sin procesar (directo a las apps)", "Usar este micrófono",
@@ -598,6 +615,9 @@ const UiText kItalian = {
     "Riproduci qui", "Dimentica",
     "Le uscite nuove partono dall'impostazione Altoparlante per gli altoparlanti Frame e da Auricolari per il resto. "
     "\"Riproduci qui\" cambia la stessa uscita delle impostazioni audio di SteamVR. Scorri un elenco lungo con lo stick o trascinando",
+    "Evita tagli",
+    "Evita tagli: per adattatori che spengono l'amplificatore nel silenzio. Riproduce di continuo un tono non udibile, quindi "
+    "nel silenzio si può sentire un leggero fruscio, e usa un po' di batteria",
     // Microfono
     "Microfono da usare", "La cancellazione dell'eco e il filtro rumore valgono solo per il microfono integrato di Frame",
     "Si applicano eco e filtro rumore", "Nessuna elaborazione (dritto alle app)", "Usa questo microfono",

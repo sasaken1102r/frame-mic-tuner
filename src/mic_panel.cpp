@@ -2478,6 +2478,14 @@ void MicPanel::drawOutputPicker(const frame_ui::Canvas& ui, const UiText& t, con
     }
     const auto itemH = [](const Item& item) { return item.header ? (item.firstHeader ? 30.0 : 38.0) : kRowH; };
     const double buttonW = rowButtonW(ui, {t.useOutput, t.forget});
+    // 頭切れを防ぐのオン / オフ（Frame のスピーカー以外の行。右のボタンの左）。どれかの行に出すときは、
+    // スピーカーの行も同じ幅をあけて、要約の列をそろえる。見出しは 13px の太字で、入らない言語は 2 行
+    const bool anyKeepAwake =
+        std::any_of(entries.begin(), entries.end(), [](const OutputEntry& e) { return !isBuiltinSpeaker(e.key); });
+    const double keepToggleW = 180;  // 選んだ側の「✓ オン」が縮まない幅（一番下の行のオン / オフと同じ）
+    const double keepLabelW = std::min(130.0, ui.measure(t.outKeepAwake, 13, true));
+    const std::vector<std::string> keepLabel = wrapBalanced(ui, t.outKeepAwake, 13, true, keepLabelW);
+    const double keepGroupW = anyKeepAwake ? keepLabelW + 10 + keepToggleW + 16 : 0;
     double contentH = 0;
     for (const Item& item : items) contentH += itemH(item) + kRowGap;
     if (!items.empty()) contentH -= kRowGap;
@@ -2504,7 +2512,11 @@ void MicPanel::drawOutputPicker(const frame_ui::Canvas& ui, const UiText& t, con
         const bool viewing = e.key == viewedKey_;
         const Rect button {row.right() - 12 - buttonW, y + (kRowH - 56) / 2, buttonW, 56};
         const Rect rowArea {row.x, row.y, button.x - 12 - row.x, row.h};
-        const int l = look(rowArea);
+        const bool keepShown = !isBuiltinSpeaker(e.key);
+        const Rect keepToggle {button.x - 16 - keepToggleW, y + (kRowH - 44) / 2, keepToggleW, 44};
+        // 頭切れを防ぐのスイッチに乗っている間は、行は乗っている見た目にしない（押しても設定の表示には切り替えない）
+        const bool overKeep = keepShown && pointer_.inside && keepToggle.contains(pointer_.x, pointer_.y);
+        const int l = overKeep ? 0 : look(rowArea);
         fillRounded(cr, row, 16, viewing ? kRowSelected : (l == 2 ? kControlDown : (l == 1 ? kControl : kInset)));
         if (viewing) strokeRounded(cr, row, 16, kAccent, 2);
         // 右: ここから音を出す / いま使用中 / 忘れる
@@ -2525,8 +2537,17 @@ void MicPanel::drawOutputPicker(const frame_ui::Canvas& ui, const UiText& t, con
         const double cy = y + kRowH / 2;
         const double nameX = row.x + 14 + 44 + 14;
         const std::string summary = summaryText(e.profile.echo, e.profile.ns, t);
-        const double summaryW = ui.measure(summary, 14);
-        const double summaryRight = button.x - 20;
+        const double summaryRight = button.x - keepGroupW - 20;
+        // 要約は 14px の 1 行。名前に 220 を残せないときは 13px の 2 行にする
+        const double summaryRoom = summaryRight - nameX - 220;
+        double summarySize = 14;
+        std::vector<std::string> summaryLines = {summary};
+        if (ui.measure(summary, summarySize) > summaryRoom) {
+            summarySize = 13;
+            summaryLines = wrapBalanced(ui, summary, summarySize, false, summaryRoom);
+        }
+        double summaryW = 0;
+        for (const std::string& line : summaryLines) summaryW = std::max(summaryW, ui.measure(line, summarySize));
         const double nameRight = summaryRight - summaryW - 20;
         withAlpha(cr, e.connected ? 1.0 : 0.7, [&] {
             fillRounded(cr, {row.x + 14, cy - 22, 44, 44}, 11, kIconBox);
@@ -2557,14 +2578,38 @@ void MicPanel::drawOutputPicker(const frame_ui::Canvas& ui, const UiText& t, con
             status = date.empty() ? std::string(t.lastUsedUnknown) : format1(t.lastUsedFormat, date);
             ui.text(nameX, cy + 22, status, 14, rgb(kTextMuted));
         }
-        ui.text(summaryRight, frame_ui::centerBaseline(row.y, row.h, 14), summary, 14, rgb(kTextMuted), false, true);
+        const double summaryTop = frame_ui::centerBaseline(row.y, row.h, summarySize) -
+                                  (static_cast<double>(summaryLines.size()) - 1) * 9;
+        for (size_t i = 0; i < summaryLines.size(); ++i) {
+            ui.text(summaryRight, summaryTop + 18 * i, summaryLines[i], summarySize, rgb(kTextMuted), false, true);
+        }
         addButton({PanelAction::OutputView, 0, e.key}, intersect(rowArea, kOutputList), true);
+        if (keepShown) {
+            // 見出し（スイッチの左に右寄せ）とオン / オフ。行の上に重ねて登録するので、押すとこちらが先に当たる
+            const double labelBaseline = frame_ui::centerBaseline(keepToggle.y, keepToggle.h, 13) -
+                                         (static_cast<double>(keepLabel.size()) - 1) * 8;
+            for (size_t i = 0; i < keepLabel.size(); ++i) {
+                ui.text(keepToggle.x - 10, labelBaseline + 16 * i, keepLabel[i], 13, rgb(kLabelSoft), true, true);
+            }
+            const std::vector<Rect> hits =
+                frame_ui::drawSegmented(ui, keepToggle, {t.on, t.off}, e.profile.keepAwake ? 0 : 1);
+            addButton({PanelAction::KeepAwakeOn, 0, e.key}, intersect(hits[0], kOutputList), true);
+            addButton({PanelAction::KeepAwakeOff, 0, e.key}, intersect(hits[1], kOutputList), true);
+        }
         y += kRowH + kRowGap;
     }
     cairo_restore(cr);
     endList(ui, contentH, kOutputList.right() + 8);
 
-    drawLines(ui, kOutputList.x, 650 + 14, 20, wrapText(ui, t.outPickerNote, 13, false, kOutputList.w, 2), 13, kTextMuted);
+    if (!anyKeepAwake) {
+        drawLines(ui, kOutputList.x, 650 + 14, 20, wrapText(ui, t.outPickerNote, 13, false, kOutputList.w, 2), 13, kTextMuted);
+        return;
+    }
+    // 頭切れを防ぐのスイッチを出すときは、その説明を続けて出す（どちらも 2 行まで。行の間を 18 に詰める）
+    const std::vector<std::string> note = wrapText(ui, t.outPickerNote, 13, false, kOutputList.w, 2);
+    drawLines(ui, kOutputList.x, 652, 18, note, 13, kTextMuted);
+    drawLines(ui, kOutputList.x, 652 + 18 * static_cast<double>(note.size()) + 4, 18,
+              wrapText(ui, t.outKeepAwakeNote, 13, false, kOutputList.w, 2), 13, kTextMuted);
 }
 
 void MicPanel::drawMicPicker(const frame_ui::Canvas& ui, const UiText& t, const PanelModel& model) {
@@ -2713,9 +2758,9 @@ bool MicPanel::buttonCenter(PanelAction action, double& x, double& y, const std:
     return false;
 }
 
-Rect MicPanel::buttonRect(PanelAction action) const {
+Rect MicPanel::buttonRect(PanelAction action, const std::string& key) const {
     for (const auto& b : buttons_) {
-        if (b.hit.action == action) return b.rect;
+        if (b.hit.action == action && (key.empty() || b.hit.key == key)) return b.rect;
     }
     return {};
 }

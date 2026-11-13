@@ -77,8 +77,7 @@ struct UiText {
     const char* nsGraceHint;       ///< 余韻の説明
     const char* nsInactive;        ///< ノイズ除去がオフの間の説明
     const char* nsReset;           ///< 「標準に戻す」
-    const char* nsDefaultNote;     ///< 「標準に戻す」の左の説明（標準の値）
-    // ---- 外付けのマイク ----
+    const char* nsDefaultNote;     ///< 「標準に戻す」の左の説明（標準の値）    // ---- 外付けのマイク ----
     const char* externalNowFormat;    ///< 「いまは %s を使っています」
     const char* externalExplain;      ///< 処理がかかるのは内蔵マイクだけ
     const char* externalSavedFormat;  ///< 覚えている設定（%1$s = 出口、%2$s = 設定のまとめ）
@@ -141,6 +140,8 @@ struct UiText {
     const char* useOutput;         ///< 「ここから音を出す」
     const char* forget;            ///< 「忘れる」
     const char* outPickerNote;     ///< 下の説明
+    const char* outKeepAwake;      ///< 行の「頭切れを防ぐ」の見出し（オン / オフの左。Frame のスピーカー以外の行）
+    const char* outKeepAwakeNote;  ///< 下の説明のあとの、頭切れを防ぐの説明
     // ---- 使うマイク ----
     const char* micPickerTitle;
     const char* micPickerSub;

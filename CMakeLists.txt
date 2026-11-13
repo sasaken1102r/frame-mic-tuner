@@ -31,6 +31,7 @@ add_executable(frame-mic-tuner
   src/mic_panel.cpp
   src/theme.cpp
   src/voice_check.cpp
+  src/keep_awake.cpp
   src/vr_overlay.cpp
   src/vk_texture.cpp
   src/draw.cpp

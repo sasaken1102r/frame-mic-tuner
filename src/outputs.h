@@ -148,13 +148,26 @@ struct OutputProfile {
     double nsVad = 23.0;                  ///< ノイズ除去の判定の厳しさ（%）
     double nsGrace = 500.0;               ///< ノイズ除去の余韻（ms）
     std::string lastUsed;                 ///< 最後に使った日（YYYY-MM-DD、ローカル時刻。空 = 分からない）
+    bool keepAwake = false;               ///< 音の頭切れを防ぐ（聞こえない音を流し続ける。keep_awake.h）
 
-    /** @return エコー除去・ノイズ除去・強さが同じなら true（名前と日付は比べない） */
+    /**
+     * @return エコー除去・ノイズ除去・強さが同じなら true（名前と日付は比べない。頭切れを防ぐもマイクの設定ではないので比べない）
+     */
     bool sameSettings(const OutputProfile& other) const;
 };
 
 /**
- * 初めて見た出口の設定（Frame のスピーカーならスピーカーのプリセット、ほかはイヤホンのプリセット。強さは SteamOS の値）。
+ * 音の頭切れを防ぐの既定（設定ファイルにキーが無いときも同じ）。AB13X の USB の出口（alsa_output.usb-…_AB13X_…）だけオン。
+ * AB13X のイヤホン変換は、無音が約 1 秒続くと自分でアンプを切り、次の音の頭が約 0.15 秒聞こえないため（Frame で確かめた）。
+ * ほかの USB の機器は切るか分からず、オンにするとアンプのサーという音が無音のときも聞こえるので、自分でオンにしてもらう。
+ * @param key 出口のキー
+ * @return オンにするなら true
+ */
+bool keepAwakeDefault(const std::string& key);
+
+/**
+ * 初めて見た出口の設定（Frame のスピーカーならスピーカーのプリセット、ほかはイヤホンのプリセット。強さは SteamOS の値。
+ * 音の頭切れを防ぐは keepAwakeDefault）。
  * @param key 出口のキー
  * @param name 表示名
  * @return 設定

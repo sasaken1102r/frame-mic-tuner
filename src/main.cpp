@@ -4,6 +4,7 @@
 #include "config.h"
 #include "draw.h"
 #include "i18n.h"
+#include "keep_awake.h"
 #include "mic_panel.h"
 #include "mic_state.h"
 #include "mic_worker.h"
@@ -557,12 +558,12 @@ void logState(const MicState& state) {
 /**
  * 出口ごとの設定を短い日本語にする（--print 用）。
  * @param p 設定
- * @return 例:「エコー除去オン・ノイズ除去オフ・23%/500ms（スピーカー、最後に使った日 2026-10-10）」
+ * @return 例:「エコー除去オン・ノイズ除去オフ・23%/500ms・頭切れ防止オフ（スピーカー、最後に使った日 2026-10-10）」
  */
 std::string describeProfile(const OutputProfile& p) {
-    char text[200];
-    std::snprintf(text, sizeof(text), "エコー除去%s・ノイズ除去%s・%.0f%%/%.0fms（%s、最後に使った日 %s）",
-                  p.echo ? "オン" : "オフ", p.ns ? "オン" : "オフ", p.nsVad, p.nsGrace,
+    char text[240];
+    std::snprintf(text, sizeof(text), "エコー除去%s・ノイズ除去%s・%.0f%%/%.0fms・頭切れ防止%s（%s、最後に使った日 %s）",
+                  p.echo ? "オン" : "オフ", p.ns ? "オン" : "オフ", p.nsVad, p.nsGrace, p.keepAwake ? "オン" : "オフ",
                   p.kind == OutputKind::Speaker ? "スピーカー" : "イヤホン", p.lastUsed.empty() ? "不明" : p.lastUsed.c_str());
     return text;
 }
@@ -607,6 +608,9 @@ void printOutputs(const MicState& state, const Config& config) {
             std::printf("  今の出口はまだ覚えていません（常駐が起動すると、今かかっている設定をこの出口の設定として移します）\n");
         }
     }
+    // 常駐が聞こえない音を流す先（今の出口の頭切れ防止がオンで、Frame のスピーカー以外のとき）
+    const std::string keepAwake = keepAwakeTarget(d, config.outputs);
+    std::printf("音の頭切れを防ぐ（常駐が聞こえない音を流す先）: %s\n", keepAwake.empty() ? "流さない" : keepAwake.c_str());
 }
 
 /**
@@ -1393,6 +1397,66 @@ int runSelfTest() {
         expect("タブ: かんたんのタブではバーを描かない", !panel.trackCenter(PanelAction::NsVadSlider, qx, qy));
     }
 
+    // 音の頭切れを防ぐ: 音の出口を選ぶ画面の行のスイッチ（Frame のスピーカーの行には出さない）。細かく調整のタブには出さない
+    {
+        MicPanel panel(fonts);
+        Config config;
+        config.tab = PanelTab::Fine;
+        config.outputs = fakeProfiles(3);
+        config.outputsSaved = true;
+        PanelModel model = loadedModel(false);
+        model.state.devices = fakeDevices(true, false);  // 今の出口は AB13X（つながっている: スピーカー・AB13X・WH-1000XM4）
+        model.activeOutputKey = model.state.devices.defaultOutputKey;
+        model.state.echo = false;
+        double x = 0.0;
+        double y = 0.0;
+        panel.render(config, model);
+        expect("頭切れ防止: 細かく調整のタブには出さず、配置は前のまま（標準に戻すは y 514）",
+               !panel.buttonCenter(PanelAction::KeepAwakeOn, x, y) && panel.buttonRect(PanelAction::NsReset).y == 514);
+
+        panel.showForPreview(PanelView::Settings, PanelOverlay::OutputPicker);
+        panel.render(config, model);
+        const std::string past = "bluez_output.11_22_33_44_55_66";  // 前に使った出口の 1 つ目
+        expect("頭切れ防止: Frame のスピーカーの行には出さない",
+               !panel.buttonCenter(PanelAction::KeepAwakeOn, x, y, kBuiltinSpeakerKey) &&
+                   !panel.buttonCenter(PanelAction::KeepAwakeOff, x, y, kBuiltinSpeakerKey));
+        expect("頭切れ防止: USB の行（AB13X）・ほかのつながっている行・前に使った出口の行には出す",
+               panel.buttonCenter(PanelAction::KeepAwakeOn, x, y, kFakeAb13xOut) &&
+                   panel.buttonCenter(PanelAction::KeepAwakeOff, x, y, kFakeBluetooth) &&
+                   panel.buttonCenter(PanelAction::KeepAwakeOn, x, y, past));
+
+        // 押す: 一覧の中なので離したときに返す。行（設定を表示）ではなく、その出口のキー付きのスイッチの操作
+        panel.buttonCenter(PanelAction::KeepAwakeOff, x, y, kFakeAb13xOut);
+        const PanelHit down = panel.pointerDown(x, y, 0.0);
+        const PanelHit up = panel.pointerUp();
+        panel.buttonCenter(PanelAction::KeepAwakeOn, x, y, past);
+        panel.pointerDown(x, y, 0.1);
+        const PanelHit upPast = panel.pointerUp();
+        expect("頭切れ防止: スイッチを押して離すと、その出口のキー付きの操作だけを返す（設定の表示にはしない）",
+               down.action == PanelAction::None && up.action == PanelAction::KeepAwakeOff && up.key == kFakeAb13xOut &&
+                   upPast.action == PanelAction::KeepAwakeOn && upPast.key == past &&
+                   panel.overlay() == PanelOverlay::OutputPicker && panel.viewedOutputKey() == kFakeAb13xOut);
+
+        // スクロール: スイッチを押したまま動かすとスクロールになり、離しても押したことにならない
+        panel.buttonCenter(PanelAction::KeepAwakeOn, x, y, kFakeBluetooth);
+        panel.pointerDown(x, y, 0.2);
+        panel.pointerMove(x, y - 40);
+        const PanelHit dragged = panel.pointerUp();
+        expect("頭切れ防止: スイッチの上から一覧をドラッグしたら、押したことにならない", dragged.action == PanelAction::None);
+
+        // 重ならない: スイッチは右のボタン（ここから音を出す・忘れる）の左に収まり、オンとオフは並ぶ
+        panel.setListScrollForPreview(0);
+        panel.render(config, model);
+        const frame_ui::Rect on = panel.buttonRect(PanelAction::KeepAwakeOn, kFakeBluetooth);
+        const frame_ui::Rect off = panel.buttonRect(PanelAction::KeepAwakeOff, kFakeBluetooth);
+        const frame_ui::Rect use = panel.buttonRect(PanelAction::OutputUse, kFakeBluetooth);
+        const frame_ui::Rect pastOff = panel.buttonRect(PanelAction::KeepAwakeOff, past);
+        const frame_ui::Rect forget = panel.buttonRect(PanelAction::OutputForget, past);
+        expect("頭切れ防止: スイッチは右のボタンと重ならない",
+               on.w > 0 && off.w > 0 && use.w > 0 && forget.w > 0 && on.right() <= off.x && off.right() < use.x &&
+                   on.y >= use.y - 8 && on.bottom() <= use.bottom() + 8 && pastOff.right() < forget.x);
+    }
+
     // アプリと更新: 「更新する」の 1 回目は確認の表示（「やめる」が出る）だけ、「やめる」で元に戻る。確認中に「更新する」で更新する
     {
         MicPanel panel(fonts);
@@ -1759,6 +1823,8 @@ int runOverlay(const Options& options) {
         if (!saveConfig(options.configPath, config, error)) std::fprintf(stderr, "[設定] 保存に失敗: %s\n", error.c_str());
     };
     VoiceCheck voice;
+    // 音の頭切れを防ぐ: USB のイヤホン変換などへ、聞こえない音を流し続ける（アプリが動いている間だけ。閉じている間も）
+    KeepAwake keepAwake;
     VrOverlay vr;
     // ほかのアプリの一覧（vendor/frame-apps）。サイトから取ってくるのは「新しい版の確認」がオンのときだけ（1 時間に 1 回まで。
     // 取れなければ前回の分 → 同梱の一覧）
@@ -1906,6 +1972,23 @@ int runOverlay(const Options& options) {
         changeViewedProfile([echo, on](OutputProfile& p) { (echo ? p.echo : p.ns) = on; });
     };
     /**
+     * 出口の「頭切れを防ぐ」だけを切り替えて保存する（音の出口を選ぶ画面の行のスイッチ）。
+     * マイクの設定・表示している出口・自動で切り替えた知らせには触らない。流す・止めるは、ループで毎回
+     * keepAwakeTarget を見て合わせるので、今の出口ならその場で変わる。
+     * @param key 出口のキー
+     * @param on オンにするなら true
+     */
+    const auto setKeepAwake = [&](const std::string& key, bool on) {
+        if (key.empty() || isBuiltinSpeaker(key)) return;
+        bool created = false;
+        OutputProfile& profile = ensureProfile(config, key, state.devices, created);
+        if (profile.keepAwake == on && !created) return;
+        profile.keepAwake = on;
+        std::fprintf(stderr, "[操作] 音の頭切れを防ぐ %s（%s%s）\n", on ? "オン" : "オフ", key.c_str(),
+                     key == outputSync.activeKey() ? "・今の出口" : "");
+        saveNow();
+    };
+    /**
      * ノイズ除去の強さを変える。今の出口ならワーカーに頼み（前に送った値と同じなら頼まない）、読み直しが追いつくまで表示を保つ。
      * @param vad 判定の厳しさ（%）
      * @param grace 余韻（ms）
@@ -2018,6 +2101,8 @@ int runOverlay(const Options& options) {
                 std::fprintf(stderr, "[操作] ノイズ除去の強さを標準に戻す\n");
                 sendNsParams(kNsVadDefault, kNsGraceDefault, true);
                 break;
+            case PanelAction::KeepAwakeOn:
+            case PanelAction::KeepAwakeOff: setKeepAwake(hit.key, action == PanelAction::KeepAwakeOn); break;
             case PanelAction::UndoSwitch:
                 if (outputSync.undo(config)) saveNow();
                 break;
@@ -2220,6 +2305,9 @@ int runOverlay(const Options& options) {
             }
         }
         if (userQuit) break;
+        // 音の頭切れを防ぐ: 今の既定の出力（ワーカーが 2 秒おきに見ている）とその出口の設定から流す先を決めて合わせる。
+        // 先が変わればすぐ向け直し、ストリームが失敗・切断したら 2 秒後にまた試す（パネルを閉じている間も）
+        keepAwake.update(keepAwakeTarget(state.devices, config.outputs), nowSeconds());
         // プリセットの書き込みと読み直しが終わったら、カードの見た目を実際の値に戻す
         if (panel.presetHeld() && worker.completed() >= presetTicket) {
             panel.clearPresetHold();
@@ -2257,6 +2345,7 @@ int runOverlay(const Options& options) {
 
     // SIGTERM / SIGINT・SteamVR の終了・vrserver の消滅・「終了」のどれでも同じ終了処理を通す
     voice.shutdown();  // 録音・再生を止める（録った音はメモリごと消える）
+    keepAwake.shutdown();  // 聞こえない音を止める
     vr.shutdown();
     worker.stop();
     std::fprintf(stderr, "[VR] 終了しました\n");
