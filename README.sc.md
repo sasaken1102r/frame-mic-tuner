@@ -147,7 +147,7 @@ wpctl settings --save frame-mic.noise-suppression true   # 打开噪声抑制（
 - 日志：作为服务运行时用 `journalctl --user -u frame-mic-tuner -f`。要看手动启动的日志，先退出应用，再从 SSH 运行 `~/.local/bin/frame-mic-tuner`。
 - **检查新版本失败，或者按「更新」没有反应**：`~/.cache/frame-mic-tuner/update.log` 里有详细过程，`~/.cache/frame-mic-tuner/update-check.json` / `update-state.json` 里是最后一次的原始回答。关掉 **检查新版本**（或在设置文件里写 `update_check: false`）只会停掉每天一次的自动检查，**立即检查** / **更新** 仍然可用。
 - **插上耳机后设置没有切换**：应用只跟随 *默认* 声音输出。如果 SteamVR 仍从 Frame 扬声器出声，请在 **声音输出** 里对耳机按 **从这里输出**（在 SteamVR 的音频设置里选也一样）。不是真实设备的输出（滤波器、虚拟输出）会被忽略。
-- **USB-C 耳机的声音开头被切掉**：在 **声音输出** 里打开该输出的 **防止开头被切**。如果没有改善，说明那个转接器并没有关闭功放，可以把它关回去。
+- **USB-C 耳机的声音开头被切掉**：在 **声音输出** 里打开该输出的 **防止开头被切**。如果没有改善，说明它对那个转接器不起作用，请把它关回去。
 - **安装其他应用时出现「无法打开 Konsole」**：Konsole 需要开发者模式（Steam 设置 → 系统 → Enable Developer Mode）。
 
 ## 隐私

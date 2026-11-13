@@ -69,6 +69,7 @@ private:
     double retryAt_ = 0.0;          ///< この時刻より前は、止まったストリームを作り直さない
     int failures_ = 0;              ///< 続けて失敗した回数（ログを連打しない）
     std::atomic<bool> failed_ {false};  ///< ストリームが失敗・切断した（PipeWire のスレッドで立てる）
+    std::atomic<bool> streaming_ {false};  ///< ストリームが流れ始めた（PipeWire のスレッドで立てる。失敗の回数を 0 に戻す）
     std::string failReason_;        ///< その理由（ログ用。ループのロックを持って読み書きする）
     double phase_ = 0.0;            ///< サインの位相（PipeWire のスレッドだけが触る。作り直してもつなぐ）
 

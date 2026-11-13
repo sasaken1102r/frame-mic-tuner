@@ -31,6 +31,10 @@ cmake --build "$build_dir" --clean-first
 # （ベータの Frame でビルドすると、関数によっては新しい版につながる。0.3.6 の前に log10f が GLIBC_2.43 になった）
 max_glibc="2.38"
 need_glibc="$(objdump -T "$build_dir/$name" | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sed 's/GLIBC_//' | sort -Vu | tail -n 1)"
+if [[ -z "$need_glibc" ]]; then
+    echo "Could not read the glibc versions from $build_dir/$name (objdump -T)" >&2
+    exit 1
+fi
 if [[ "$(printf '%s\n%s\n' "$need_glibc" "$max_glibc" | sort -V | tail -n 1)" != "$max_glibc" ]]; then
     echo "The binary needs GLIBC_$need_glibc (stable SteamOS has 2.39; allowed up to $max_glibc):" >&2
     objdump -T "$build_dir/$name" | grep -E "GLIBC_$need_glibc" >&2

@@ -147,7 +147,7 @@ A change made this way (or by an aux button) is noticed while the panel is open,
 - Logs: `journalctl --user -u frame-mic-tuner -f` when it runs as a service. To see the log of a manual run, quit the app and start `~/.local/bin/frame-mic-tuner` from SSH.
 - **The update check fails, or "Update" doesn't do anything**: `~/.cache/frame-mic-tuner/update.log` has the details, and `~/.cache/frame-mic-tuner/update-check.json` / `update-state.json` the last raw answer. Turning **Check for updates** off (or `update_check: false` in the settings file) stops the automatic daily check without removing **Check now** / **Update**.
 - **The settings didn't switch when I plugged in earphones**: the app only follows the *default* output. If SteamVR keeps playing through the Frame's speakers, press **Play sound here** on the earphones in **Output** (or choose them in SteamVR's audio settings). Outputs that aren't real devices (filters, virtual outputs) are ignored.
-- **The start of sounds is cut off with USB-C earphones**: turn on **Stop cut-off** for that output in **Output**. If it doesn't help, that adapter isn't switching its amplifier off, and you can turn it off again.
+- **The start of sounds is cut off with USB-C earphones**: turn on **Stop cut-off** for that output in **Output**. If it doesn't help, it doesn't work for that adapter, so turn it off again.
 - **"Couldn't open Konsole"** when installing another app: Konsole needs Developer Mode (Steam Settings → System → Enable Developer Mode).
 
 ## Privacy

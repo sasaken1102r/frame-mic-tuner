@@ -147,7 +147,7 @@ Un cambio hecho así (o con un botón aux) se nota mientras el panel está abier
 - Registros: `journalctl --user -u frame-mic-tuner -f` cuando corre como servicio. Para ver el registro de un arranque manual, sal de la app e inicia `~/.local/bin/frame-mic-tuner` por SSH.
 - **La búsqueda de actualizaciones falla, o «Update» no hace nada**: `~/.cache/frame-mic-tuner/update.log` tiene el detalle, y `~/.cache/frame-mic-tuner/update-check.json` / `update-state.json` la última respuesta en bruto. Apagar **Buscar actualizaciones** (o `update_check: false` en el archivo de ajustes) para la comprobación diaria automática sin quitar **Check now** / **Update**.
 - **Los ajustes no cambiaron al conectar auriculares**: la app solo sigue la salida *predeterminada*. Si SteamVR sigue sonando por los altavoces de Frame, pulsa **Reproducir aquí** en los auriculares dentro de **Salida** (o elígelos en el audio de SteamVR). Las salidas que no son aparatos de verdad (filtros, salidas virtuales) se ignoran.
-- **Con auriculares USB-C se corta el comienzo de los sonidos**: activa **Evitar cortes** para esa salida en **Salida**. Si no ayuda, ese adaptador no apaga su amplificador y puedes volver a desactivarla.
+- **Con auriculares USB-C se corta el comienzo de los sonidos**: activa **Evitar cortes** para esa salida en **Salida**. Si no ayuda, no funciona con ese adaptador, así que vuelve a desactivarla.
 - **«No se pudo abrir Konsole» al instalar otra app**: Konsole necesita el modo de desarrollador (Ajustes de Steam → Sistema → Enable Developer Mode).
 
 ## Privacidad

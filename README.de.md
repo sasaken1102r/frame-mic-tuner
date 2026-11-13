@@ -147,7 +147,7 @@ Eine Änderung auf diesem Weg (oder über eine Aux-Taste) fällt auf, solange da
 - Logs: `journalctl --user -u frame-mic-tuner -f`, wenn es als Dienst läuft. Das Log eines manuellen Starts siehst du, indem du die App beendest und `~/.local/bin/frame-mic-tuner` aus SSH startest.
 - **Die Update-Prüfung schlägt fehl, oder „Update“ tut nichts**: `~/.cache/frame-mic-tuner/update.log` hat die Einzelheiten, `~/.cache/frame-mic-tuner/update-check.json` / `update-state.json` die letzte Roh-Antwort. **Nach Updates suchen** aus (oder `update_check: false` in der Einstellungsdatei) stoppt die automatische tägliche Prüfung, ohne **Check now** / **Update** zu entfernen.
 - **Die Einstellungen haben nicht gewechselt, als ich Ohrhörer angesteckt habe**: Die App folgt nur dem *Standard*-Ausgang. Spielt SteamVR weiter über die Lautsprecher des Frame, bei den Ohrhörern in **Ausgang** **Hier wiedergeben** drücken (oder sie in der Audioeinstellung von SteamVR wählen). Ausgänge, die keine echten Geräte sind (Filter, virtuelle Ausgänge), werden ignoriert.
-- **Bei USB-C-Ohrhörern fehlt der Anfang von Tönen**: **Tonabriss verhindern** für diesen Ausgang in **Ausgang** einschalten. Hilft das nicht, schaltet dieser Adapter seinen Verstärker nicht ab, und du kannst die Option wieder ausschalten.
+- **Bei USB-C-Ohrhörern fehlt der Anfang von Tönen**: **Tonabriss verhindern** für diesen Ausgang in **Ausgang** einschalten. Hilft das nicht, wirkt es bei diesem Adapter nicht; schalte die Option dann wieder aus.
 - **„Konsole ließ sich nicht öffnen“ beim Installieren einer anderen App**: Konsole braucht den Entwicklermodus (Steam-Einstellungen → System → Enable Developer Mode).
 
 ## Datenschutz

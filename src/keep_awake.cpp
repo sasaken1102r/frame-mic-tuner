@@ -54,7 +54,7 @@ bool KeepAwake::ensureLoop() {
     initPipeWireOnce();
     loop_ = pw_thread_loop_new("frame-mic-tuner-keep-awake", nullptr);
     if (loop_ == nullptr) {
-        std::fprintf(stderr, "[頭切れ防止] PipeWire のスレッドを作れません\n");
+        if (failures_ < kLoggedFailures) std::fprintf(stderr, "[頭切れ防止] PipeWire のスレッドを作れません\n");
         return false;
     }
     // SIGTERM・SIGINT・SIGUSR1 はメインスレッドで受けたいので、止めた状態でスレッドを作る（マスクは引き継がれる）
@@ -68,7 +68,7 @@ bool KeepAwake::ensureLoop() {
     const int started = pw_thread_loop_start(loop_);
     pthread_sigmask(SIG_SETMASK, &previous, nullptr);
     if (started != 0) {
-        std::fprintf(stderr, "[頭切れ防止] PipeWire のスレッドを始められません\n");
+        if (failures_ < kLoggedFailures) std::fprintf(stderr, "[頭切れ防止] PipeWire のスレッドを始められません\n");
         pw_thread_loop_destroy(loop_);
         loop_ = nullptr;
         return false;
@@ -81,6 +81,11 @@ const pw_stream_events& KeepAwake::events() {
         pw_stream_events e {};
         e.version = PW_VERSION_STREAM_EVENTS;
         e.state_changed = [](void* data, pw_stream_state, pw_stream_state state, const char* error) {
+            // 流れ始めた: 続けて失敗した回数を 0 に戻してもらう（ログをまた出せるように）
+            if (state == PW_STREAM_STATE_STREAMING) {
+                static_cast<KeepAwake*>(data)->streaming_ = true;
+                return;
+            }
             // 失敗と切断（出口が消えた・PipeWire が止まった）。止めるのはメインスレッド。
             // 自分で壊したときも UNCONNECTED が来るが、そのときは先に stream_ を空にしてあるので数えない
             if (state != PW_STREAM_STATE_ERROR && state != PW_STREAM_STATE_UNCONNECTED) return;
@@ -122,11 +127,12 @@ const pw_stream_events& KeepAwake::events() {
 
 bool KeepAwake::start() {
     if (!ensureLoop()) return false;
-    // target.object で既定の出力のノードへ向け、node.dont-reconnect でほかの出口へ勝手に移らないようにする
+    // target.object で既定の出力のノードへ向け、node.dont-reconnect でほかの出口へ勝手に移らないようにする。
+    // node.dont-fallback は、その出口が消えた直後（見張りが気づくまで）に作り直したとき、既定の出口へつながないため
     pw_properties* props = pw_properties_new(
         PW_KEY_MEDIA_TYPE, "Audio", PW_KEY_MEDIA_CATEGORY, "Playback", PW_KEY_MEDIA_NAME, kMediaName, PW_KEY_NODE_NAME,
         kNodeName, PW_KEY_NODE_DESCRIPTION, kMediaName, PW_KEY_APP_NAME, "Frame Mic Tuner", PW_KEY_TARGET_OBJECT,
-        target_.c_str(), PW_KEY_NODE_DONT_RECONNECT, "true", nullptr);
+        target_.c_str(), PW_KEY_NODE_DONT_RECONNECT, "true", "node.dont-fallback", "true", nullptr);
     pw_thread_loop_lock(loop_);
     pw_stream* stream = pw_stream_new_simple(pw_thread_loop_get_loop(loop_), kMediaName, props, &events(), this);
     int result = -EINVAL;
@@ -150,6 +156,7 @@ bool KeepAwake::start() {
         }
     }
     failed_ = false;
+    streaming_ = false;
     failReason_.clear();
     pw_thread_loop_unlock(loop_);
     if (stream_ == nullptr) {
@@ -185,6 +192,7 @@ void KeepAwake::update(const std::string& target, double now) {
         retryAt_ = now;
         failures_ = 0;
     }
+    if (stream_ != nullptr && streaming_.exchange(false)) failures_ = 0;
     if (stream_ != nullptr && failed_) {
         // 失敗・切断: 止めて、次の見回り（2 秒後）でまた試す
         const std::string reason = stop();
