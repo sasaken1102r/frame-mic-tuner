@@ -129,12 +129,12 @@ int main() {
     const double heldOutDb = 10.0 * std::log10(std::pow(10.0, powerDb(heldOut, 8.0, 8.9) / 10.0) - pHeldNoiseOut);
     check(heldIn - heldOutDb <= 3.0, "a note held for 6 s loses 3 dB or less", heldIn - heldOutDb);
 
-    // 雑音が途中で 10 dB 大きくなっても（ファンを強くした）、10 秒後には下がる
+    // 雑音が途中（起動直後の絞らない 3.5 秒より後）で 10 dB 大きくなっても（ファンを強くした）、7 秒後には下がる
     std::vector<float> louder(n);
-    for (size_t i = 0; i < n; ++i) louder[i] = noise[i] * (i < static_cast<size_t>(1.0 * kRate) ? 1.0f : 3.16f);
+    for (size_t i = 0; i < n; ++i) louder[i] = noise[i] * (i < static_cast<size_t>(4.0 * kRate) ? 1.0f : 3.16f);
     const std::vector<float> louderOut = run(louder, 20.0f);
     const double louderDrop = powerDb(louder, 11.0, 11.9) - powerDb(louderOut, 11.0, 11.9);
-    check(louderDrop >= 15.0, "noise that gets 10 dB louder is removed again within 10 s", louderDrop);
+    check(louderDrop >= 15.0, "noise that gets 10 dB louder (after the first 4 s) is removed again within 7 s", louderDrop);
 
     // 壊れた値（NaN）が入っても、出力が NaN のままにならない
     std::vector<float> broken = mix;
