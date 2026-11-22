@@ -101,6 +101,41 @@ int main() {
     const double lateDrop = powerDb(late, 8.0, 11.0) - powerDb(lateOut, 8.0, 11.0);
     check(lateDrop >= 15.0, "noise after silence is still removed", lateDrop);
 
+    // かぶっていないときの消音（ゼロではなく 80 dB くらい下がった音）が 6 秒続いたあと、雑音が戻って
+    // 5 秒後には下がっている（見積もりの上がる速さを絞ったままだと、追いつくまで何十秒もかかる）
+    std::vector<float> unmuted(n);
+    for (size_t i = 0; i < n; ++i) unmuted[i] = noise[i] * (i < static_cast<size_t>(6.0 * kRate) ? 1e-4f : 1.0f);
+    const std::vector<float> unmutedOut = run(unmuted, 20.0f);
+    const double unmutedDrop = powerDb(unmuted, 11.0, 11.9) - powerDb(unmutedOut, 11.0, 11.9);
+    check(unmutedDrop >= 15.0, "noise is removed within 5 s after the privacy mute ends", unmutedDrop);
+
+    // 長く伸ばした声（歌・ハミング。200 Hz、5.5 Hz の揺れ、雑音より 20 dB くらい大きい）: 3 秒から伸ばし、
+    // 6 秒目（最小値だけの見積もりなら 20 dB 下がっているころ）も 3 dB までしか下がらない
+    std::vector<float> held(n);
+    double phase = 0.0;
+    for (size_t i = 0; i < n; ++i) {
+        const double t = i / kRate;
+        phase += 2.0 * kPi * 200.0 * (1.0 + 0.02 * std::sin(2.0 * kPi * 5.5 * t)) / kRate;
+        float v = 0.0f;
+        if (t >= 3.0 && t < 11.0) {
+            for (int h = 1; h <= 15; ++h) v += static_cast<float>(std::sin(h * phase) / h);
+        }
+        held[i] = noise[i] + v * 0.02f;
+    }
+    const std::vector<float> heldOut = run(held, 20.0f);
+    const double pHeldNoiseIn = std::pow(10.0, powerDb(held, 1.0, 2.8) / 10.0);
+    const double pHeldNoiseOut = std::pow(10.0, powerDb(heldOut, 1.0, 2.8) / 10.0);
+    const double heldIn = 10.0 * std::log10(std::pow(10.0, powerDb(held, 8.0, 8.9) / 10.0) - pHeldNoiseIn);
+    const double heldOutDb = 10.0 * std::log10(std::pow(10.0, powerDb(heldOut, 8.0, 8.9) / 10.0) - pHeldNoiseOut);
+    check(heldIn - heldOutDb <= 3.0, "a note held for 6 s loses 3 dB or less", heldIn - heldOutDb);
+
+    // 雑音が途中で 10 dB 大きくなっても（ファンを強くした）、10 秒後には下がる
+    std::vector<float> louder(n);
+    for (size_t i = 0; i < n; ++i) louder[i] = noise[i] * (i < static_cast<size_t>(1.0 * kRate) ? 1.0f : 3.16f);
+    const std::vector<float> louderOut = run(louder, 20.0f);
+    const double louderDrop = powerDb(louder, 11.0, 11.9) - powerDb(louderOut, 11.0, 11.9);
+    check(louderDrop >= 15.0, "noise that gets 10 dB louder is removed again within 10 s", louderDrop);
+
     // 壊れた値（NaN）が入っても、出力が NaN のままにならない
     std::vector<float> broken = mix;
     broken[static_cast<size_t>(3.0 * kRate)] = std::nanf("");

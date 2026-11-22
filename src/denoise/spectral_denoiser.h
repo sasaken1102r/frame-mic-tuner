@@ -9,7 +9,8 @@
 
 /**
  * 一定の雑音を引くノイズ除去（1ch）。
- * 1024 サンプルの窓を 512 ずつずらして周波数に分け、各周波数の「最近 3 秒くらいの最小値」を雑音とみなす。
+ * 1024 サンプルの窓を 512 ずつずらして周波数に分け、各周波数の「最近 3 秒くらいの最小値」を雑音とみなす
+ * （上がるときは 1 秒に 3 dB まで。長く伸ばした声まで雑音にしないため）。
  * 雑音より大きく出ている成分は残し、雑音だけの成分は strength dB まで下げる（ゼロにはしない）。
  * 遅れは kFrame サンプル（48 kHz で約 21 ms）。
  */
@@ -65,6 +66,13 @@ private:
     std::array<float, kBins> prevGain_ {};
     std::array<float, kBins> prevPower_ {};
     std::array<float, kBins> highPass_ {};
+    /** 使う雑音の見積もり（最小値を、上がる速さを絞って追ったもの） */
+    std::array<float, kBins> noiseEst_ {};
+    /** 1 フレームで見積もりが上がってよい倍率 */
+    float riseStep_ = 1.0f;
+    /** 最初と無音のあと、見積もりの上がる速さを絞らないフレーム数（最小値の窓の長さ＋余裕） */
+    static constexpr int kRiseFreeFrames = kSubwindows * kSubwindowFrames + kSubwindowFrames;
+    int riseFreeFrames_ = kRiseFreeFrames;
     int subFrames_ = 0;
     int subIndex_ = 0;
     bool first_ = true;

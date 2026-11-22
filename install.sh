@@ -200,12 +200,20 @@ if [[ ! -f "$unit_dir/$denoise_unit" ]] || ! cmp -s "contrib/denoise/$denoise_un
     denoise_changed=1
 fi
 systemctl --user enable "$denoise_unit" >/dev/null 2>&1 || true
-if [[ $denoise_changed -eq 1 ]] && systemctl --user is-active --quiet "$denoise_unit"; then
-    systemctl --user restart "$denoise_unit" || true
+# Start it now only if the running WirePlumber already has this version's script (it defines frame-mic.steady-noise).
+# Before the headset restart, the old script or SteamOS's own tracker decides about the filters, and it could put
+# this filter into the mic without being asked. After the restart the service starts with PipeWire.
+if wpctl settings frame-mic.steady-noise 2>/dev/null | grep -q '^Value:'; then
+    if [[ $denoise_changed -eq 1 ]] && systemctl --user is-active --quiet "$denoise_unit"; then
+        systemctl --user restart "$denoise_unit" || true
+    else
+        systemctl --user start "$denoise_unit" || true
+    fi
+    denoise_state="$(systemctl --user is-active "$denoise_unit" 2>/dev/null || true)"
 else
-    systemctl --user start "$denoise_unit" || true
+    systemctl --user stop "$denoise_unit" 2>/dev/null || true
+    denoise_state="starts after the headset restart"
 fi
-denoise_state="$(systemctl --user is-active "$denoise_unit" 2>/dev/null || true)"
 
 if [[ $autostart -eq 1 ]]; then
     systemctl --user enable "$unit"

@@ -71,6 +71,8 @@ The build links dynamically against these libraries, which are already installed
 
 cairo is only linked dynamically, which keeps its LGPL option satisfied.
 
+The steady-noise remover (`frame-mic-denoise.so`, from `src/denoise/`) is this project's own code. It is a LADSPA 1.1 plugin: the plugin interface's structures and constants are declared in `src/denoise/ladspa_denoise.cpp` to match that format, and no code or header from the LADSPA SDK is included. It is loaded by PipeWire's filter-chain module (`/usr/bin/pipewire`, already on the headset).
+
 ## Not bundled: font
 
 The panel is drawn with the headset's own Noto Sans CJK (`/usr/share/fonts/noto-cjk/`, SteamOS package `noto-fonts-cjk`), licensed under the SIL Open Font License 1.1. No font files are included in this repository.

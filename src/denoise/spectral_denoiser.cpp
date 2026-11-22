@@ -17,6 +17,22 @@ constexpr float kDecisionDirected = 0.97f;
 constexpr double kHighPassHz = 80.0;
 /** 雑音の見積もりが 0 にならないための下限 */
 constexpr float kNoiseEpsilon = 1e-12f;
+/** 均したパワーの下限。デジタルの無音（かぶっていないときの消音など）が続いても非正規化数にならないように */
+constexpr float kPowerFloor = 1e-20f;
+/**
+ * 雑音の見積もりが上がる速さの上限（dB/秒）。最小値だけだと、3 秒より長く伸ばした声（歌・ハミング）も
+ * 「一定の雑音」になって下がる。ゆっくりしか上げないので、伸ばした声は 10 秒くらいまで残る。
+ * そのぶん、雑音が大きくなったとき（ファンを強くしたなど）は、追いつくまで数秒かかる
+ */
+constexpr double kRiseDbPerSecond = 3.0;
+/** 見積もりがこれより小さいとき（デジタルの無音のあと）は、上がる速さを絞らずにすぐ追いつく */
+constexpr float kRiseFreeBelow = 1e-10f;
+/**
+ * 1 フレームの入力の平均パワーがこれより小さければ「無音」（-100 dBFS。本物のマイクの雑音はずっと大きい）。
+ * かぶっていないときの消音（音量を下げるだけで、ゼロにはならない）のあとも、見積もりがゆっくりしか
+ * 上がらないと、かぶった直後の雑音が何十秒も消えない。無音が最小値の窓に残っている間は、絞らずに追う
+ */
+constexpr float kSilencePower = 1e-10f;
 
 }  // namespace
 
@@ -45,6 +61,7 @@ SpectralDenoiser::SpectralDenoiser(double sampleRate) : sampleRate_(sampleRate) 
         const double hz = sampleRate_ * k / kFrame;
         highPass_[k] = hz >= kHighPassHz ? 1.0f : 0.0f;
     }
+    riseStep_ = static_cast<float>(std::pow(10.0, kRiseDbPerSecond / 10.0 * kHop / sampleRate_));
     reset();
 }
 
@@ -59,6 +76,8 @@ void SpectralDenoiser::reset() {
     for (auto& sub : subMin_) sub.fill(std::numeric_limits<float>::max());
     prevGain_.fill(1.0f);
     prevPower_.fill(0.0f);
+    noiseEst_.fill(0.0f);
+    riseFreeFrames_ = kRiseFreeFrames;
     subFrames_ = 0;
     subIndex_ = 0;
     first_ = true;
@@ -86,8 +105,19 @@ void SpectralDenoiser::process(const float* in, float* out, std::size_t count) {
 }
 
 void SpectralDenoiser::processFrame() {
-    for (int i = 0; i < kFrame; ++i) spectrum_[i] = {input_[i] * window_[i], 0.0f};
+    float framePower = 0.0f;
+    for (int i = 0; i < kFrame; ++i) {
+        spectrum_[i] = {input_[i] * window_[i], 0.0f};
+        framePower += input_[i] * input_[i];
+    }
     fft(spectrum_.data(), false);
+    // 無音のフレームが最小値の窓から出ていくまで（と少しの余裕）は、見積もりの上がる速さを絞らない
+    if (framePower / kFrame < kSilencePower) {
+        riseFreeFrames_ = kRiseFreeFrames;
+    } else if (riseFreeFrames_ > 0) {
+        --riseFreeFrames_;
+    }
+    const bool riseFree = riseFreeFrames_ > 0;
 
     const bool bypass = floorGain_ >= 1.0f;
     std::array<float, kBins> power {};
@@ -96,7 +126,8 @@ void SpectralDenoiser::processFrame() {
 
     // 雑音の見積もり: 均したパワーの、最近 kSubwindows × kSubwindowFrames フレームの最小値
     for (int k = 0; k < kBins; ++k) {
-        smooth_[k] = first_ ? power[k] : kSmoothAlpha * smooth_[k] + (1.0f - kSmoothAlpha) * power[k];
+        smooth_[k] = std::max(first_ ? power[k] : kSmoothAlpha * smooth_[k] + (1.0f - kSmoothAlpha) * power[k],
+                              kPowerFloor);
         current_[k] = std::min(current_[k], smooth_[k]);
     }
     first_ = false;
@@ -108,9 +139,12 @@ void SpectralDenoiser::processFrame() {
     }
 
     for (int k = 0; k < kBins; ++k) {
-        float noise = current_[k];
-        for (const auto& sub : subMin_) noise = std::min(noise, sub[k]);
-        noise = noise * kNoiseBias + kNoiseEpsilon;
+        float minimum = current_[k];
+        for (const auto& sub : subMin_) minimum = std::min(minimum, sub[k]);
+        // 下がるときはすぐ、上がるときは kRiseDbPerSecond まで（デジタルの無音のあとだけは、すぐ追いつく）
+        float& est = noiseEst_[k];
+        est = (minimum <= est || riseFree || est < kRiseFreeBelow) ? minimum : std::min(minimum, est * riseStep_);
+        const float noise = est * kNoiseBias + kNoiseEpsilon;
         // 事後 SNR（いまのパワー ÷ 雑音）と、直前の結果も使った事前 SNR から、ウィーナーの係数を出す
         const float post = power[k] / noise;
         const float prior = kDecisionDirected * prevGain_[k] * prevGain_[k] * prevPower_[k] / noise +
