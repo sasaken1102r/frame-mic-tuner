@@ -39,12 +39,14 @@ bool touch(OutputProfile& profile, const std::string& today) {
 /**
  * ログ用に設定を短くする。
  * @param p 設定
- * @return 例:「エコー除去オン・ノイズ除去オフ・23%/500ms」
+ * @return 例:「エコー除去オン・ノイズ除去オフ・23%/500ms・一定の雑音オフ・20dB」
  */
 std::string describe(const OutputProfile& p) {
-    char text[96];
-    std::snprintf(text, sizeof(text), "エコー除去%s・ノイズ除去%s・%.0f%%/%.0fms", p.echo ? "オン" : "オフ",
-                  p.ns ? "オン" : "オフ", p.nsVad, p.nsGrace);
+    char text[160];
+    const NoiseMode mode = p.noiseMode();
+    std::snprintf(text, sizeof(text), "エコー除去%s・ノイズ除去%s・%.0f%%/%.0fms・一定の雑音%s・%.0fdB", p.echo ? "オン" : "オフ",
+                  mode == NoiseMode::Valve ? "オン" : "オフ", p.nsVad, p.nsGrace, mode == NoiseMode::Steady ? "オン" : "オフ",
+                  p.steadyDb);
     return text;
 }
 
@@ -79,6 +81,10 @@ OutputProfile liveProfile(const MicState& state, const OutputProfile& base) {
         live.nsVad = clampNsVad(state.nsParams.vad);
         live.nsGrace = clampNsGrace(state.nsParams.grace);
     }
+    // 一定の雑音を消す: 設定が無い（Frame をまだ再起動していない）ときは覚えた値のまま。
+    // 強さは、かけたい値をかけ終えたあとの読み返しだけ（サービスが起動し直した直後の既定値を取り込まない）
+    if (state.steadyKnown) live.steady = state.steady;
+    if (state.steadyParams.dbKnown && state.steadyApplied) live.steadyDb = clampSteadyDb(state.steadyParams.db);
     return live;
 }
 
@@ -90,8 +96,8 @@ void OutputSync::noteWrite(uint64_t ticket) {
 }
 
 void OutputSync::apply(const OutputProfile& profile, bool onlyIfChanged) {
-    const uint64_t ticket = request_(MicCommand::applySettings(profile.echo, profile.ns, true, profile.nsVad,
-                                                               profile.nsGrace, onlyIfChanged));
+    const uint64_t ticket = request_(MicCommand::applySettings(profile.echo, profile.noiseMode(), true, profile.nsVad,
+                                                               profile.nsGrace, profile.steadyDb, onlyIfChanged));
     if (ticket > waitTicket_) waitTicket_ = ticket;
     panelWrite_ = false;
 }
@@ -158,7 +164,7 @@ bool OutputSync::update(const MicState& state, Config& config, const std::string
         std::fprintf(stderr, "[出口] %s %s: %s をかけます\n", switched ? "出口が変わりました →" : "起動: 今の出口は",
                      key.c_str(), describe(profile).c_str());
         apply(profile, true);
-        if (before.echo != profile.echo || before.ns != profile.ns) {
+        if (before.echo != profile.echo || before.noiseMode() != profile.noiseMode()) {
             notice_ = {true, key, before};
         } else {
             notice_.shown = false;
@@ -185,7 +191,7 @@ bool OutputSync::update(const MicState& state, Config& config, const std::string
             std::fprintf(stderr, "[出口] 今の出口 %s の設定%sので覚えます: %s\n", key.c_str(),
                          fromPanel ? "をパネルで変えた" : "が外から変わった", describe(live).c_str());
             lastAdoptedFromPanel_ = fromPanel;
-            if (live.echo != profile.echo || live.ns != profile.ns) notice_.shown = false;  // 元に戻すの値はもう古い
+            if (live.echo != profile.echo || live.noiseMode() != profile.noiseMode()) notice_.shown = false;  // 元に戻すの値はもう古い
             profile = live;
             changed = true;
             changed |= mirrorLegacyNs(config, profile);
@@ -205,6 +211,8 @@ bool OutputSync::undo(Config& config) {
     profile.ns = notice_.previous.ns;
     profile.nsVad = notice_.previous.nsVad;
     profile.nsGrace = notice_.previous.nsGrace;
+    profile.setNoiseMode(notice_.previous.noiseMode());
+    profile.steadyDb = notice_.previous.steadyDb;
     std::fprintf(stderr, "[出口] 元に戻す: %s を %s にします\n", notice_.key.c_str(), describe(profile).c_str());
     if (notice_.key == activeKey_) {
         apply(profile, false);

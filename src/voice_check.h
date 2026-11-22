@@ -32,6 +32,10 @@ struct VoiceClip {
     bool nsParamsKnown = false;   ///< 録ったときのノイズ除去の強さが読めていたか
     double nsVad = 0.0;           ///< 判定の厳しさ（%）
     double nsGrace = 0.0;         ///< 余韻（ms）
+    bool steadyKnown = false;     ///< 録ったときの「一定の雑音を消す」
+    bool steady = false;
+    bool steadyDbKnown = false;   ///< 録ったときの消す強さが読めていたか
+    double steadyDb = 0.0;        ///< 消す強さ（dB）
     bool outputKnown = false;     ///< 録ったときの音の出口が分かっているか
     bool outputSpeaker = false;   ///< その出口が Frame のスピーカーか
     std::string outputName;       ///< その出口の機器の名前（Frame のスピーカーのときは使わない）

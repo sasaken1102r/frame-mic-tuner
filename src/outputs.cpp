@@ -368,9 +368,20 @@ bool writeDefaultNode(int nodeId, const std::string& nodeName, bool sink) {
     return false;
 }
 
+NoiseMode noiseModeOf(bool ns, bool steady) {
+    if (steady) return NoiseMode::Steady;
+    return ns ? NoiseMode::Valve : NoiseMode::Off;
+}
+
 bool OutputProfile::sameSettings(const OutputProfile& other) const {
     return echo == other.echo && ns == other.ns && std::fabs(nsVad - other.nsVad) < 0.5 &&
-           std::fabs(nsGrace - other.nsGrace) < 0.5;
+           std::fabs(nsGrace - other.nsGrace) < 0.5 && steady == other.steady &&
+           std::fabs(steadyDb - other.steadyDb) < 0.5;
+}
+
+void OutputProfile::setNoiseMode(NoiseMode mode) {
+    ns = mode == NoiseMode::Valve;
+    steady = mode == NoiseMode::Steady;
 }
 
 OutputProfile firstProfile(const std::string& key, const std::string& name) {
@@ -378,10 +389,13 @@ OutputProfile firstProfile(const std::string& key, const std::string& name) {
     profile.name = name;
     profile.kind = isBuiltinSpeaker(key) ? OutputKind::Speaker : OutputKind::Earphones;
     // プリセット（ユーザーと決めたもの）: スピーカー = エコー除去オン・ノイズ除去オフ、イヤホン = 両方オフ
+    // （ノイズ除去オフ = Valve のノイズ除去も、一定の雑音を消すも使わない）
     profile.echo = profile.kind == OutputKind::Speaker;
     profile.ns = false;
     profile.nsVad = kNsVadDefault;
     profile.nsGrace = kNsGraceDefault;
+    profile.steady = false;
+    profile.steadyDb = kSteadyDbDefault;
     profile.keepAwake = keepAwakeDefault(key);
     return profile;
 }

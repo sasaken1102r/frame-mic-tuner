@@ -1,5 +1,5 @@
 // 音の出口（既定の出力）と使うマイク（既定の入力）: PipeWire の一覧の読み取り、覚えるときのキー、既定の切り替え。
-// 出口ごとに Frame マイクの設定（エコー除去・ノイズ除去・ノイズ除去の強さ）を覚える（OutputProfile。保存は config.json）。
+// 出口ごとに Frame マイクの設定（エコー除去・ノイズ除去の種類・その強さ）を覚える（OutputProfile。保存は config.json）。
 // 外部コマンドは固定の引数だけで呼ぶ。PipeWire・WirePlumber の再起動はしない。
 #pragma once
 
@@ -139,21 +139,50 @@ enum class OutputKind {
     Earphones,  ///< それ以外（イヤホン・ヘッドホン。エコー除去オフ・ノイズ除去オフから始める）
 };
 
+/**
+ * ノイズ除去の種類（画面では 3 つから 1 つを選ぶ）。WirePlumber の設定 2 つ（frame-mic.noise-suppression と
+ * frame-mic.steady-noise）の組み合わせで表す。両方オンのときは「一定の雑音を消す」として扱う。
+ */
+enum class NoiseMode {
+    Off,     ///< どちらも使わない
+    Valve,   ///< Valve のノイズ除去（声以外を消す。息やささやき声も消える）
+    Steady,  ///< Frame Mic Tuner の「一定の雑音を消す」（空気清浄機・ファンなど。息やささやき声は残す）
+};
+
+/**
+ * 2 つの設定からノイズ除去の種類を決める（両方オンなら「一定の雑音を消す」）。
+ * @param ns Valve のノイズ除去
+ * @param steady 一定の雑音を消す
+ * @return 種類
+ */
+NoiseMode noiseModeOf(bool ns, bool steady);
+
 /** 出口ごとに覚える Frame マイクの設定（config.json の outputs）。 */
 struct OutputProfile {
     std::string name;                     ///< 表示名（最後に見たときの機器の説明）
     OutputKind kind = OutputKind::Earphones;
     bool echo = false;                    ///< エコー除去
-    bool ns = false;                      ///< ノイズ除去
+    bool ns = false;                      ///< Valve のノイズ除去
     double nsVad = 23.0;                  ///< ノイズ除去の判定の厳しさ（%）
     double nsGrace = 500.0;               ///< ノイズ除去の余韻（ms）
+    bool steady = false;                  ///< 一定の雑音を消す（キーは steady_noise）
+    double steadyDb = 20.0;               ///< 一定の雑音を消す強さ（dB。キーは steady_noise_db）
     std::string lastUsed;                 ///< 最後に使った日（YYYY-MM-DD、ローカル時刻。空 = 分からない）
     bool keepAwake = false;               ///< 音の頭切れを防ぐ（聞こえない音を流し続ける。keep_awake.h）
 
     /**
-     * @return エコー除去・ノイズ除去・強さが同じなら true（名前と日付は比べない。頭切れを防ぐもマイクの設定ではないので比べない）
+     * @return エコー除去・ノイズ除去の種類・強さが同じなら true（名前と日付は比べない。頭切れを防ぐもマイクの設定ではないので比べない）
      */
     bool sameSettings(const OutputProfile& other) const;
+
+    /** @return ノイズ除去の種類（ns と steady が両方オンなら Steady） */
+    NoiseMode noiseMode() const { return noiseModeOf(ns, steady); }
+
+    /**
+     * ノイズ除去の種類を決める（ns と steady を、ほかの 1 つがオフになる形で書き換える）。
+     * @param mode 種類
+     */
+    void setNoiseMode(NoiseMode mode);
 };
 
 /**

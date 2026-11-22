@@ -11,8 +11,12 @@
 /** WirePlumber の設定のキー（contrib/wireplumber/frame-mic-tracker.lua が見ている）。 */
 constexpr const char* kEchoCancelKey = "frame-mic.echo-cancel";
 constexpr const char* kNoiseSuppressionKey = "frame-mic.noise-suppression";
+/** 「一定の雑音を消す」（Frame Mic Tuner のノイズ除去）のオン・オフ。入れたあと Frame を再起動するまでは WirePlumber に無い。 */
+constexpr const char* kSteadyNoiseKey = "frame-mic.steady-noise";
 /** 自動起動の systemd ユーザーサービスの名前。 */
 constexpr const char* kServiceName = "frame-mic-tuner.service";
+/** 「一定の雑音を消す」を動かす systemd ユーザーサービス（別の PipeWire のプロセスで filter-chain を動かす）。 */
+constexpr const char* kDenoiseServiceName = "frame-mic-tuner-denoise.service";
 
 /** ノイズ除去の段のノード（filter-chain の入口。LADSPA の control はこのノードの Props の params にある）。 */
 constexpr const char* kNsNodeName = "ns_capture";
@@ -29,6 +33,17 @@ constexpr double kNsGraceMax = 1000.0;
 constexpr double kNsGraceDefault = 500.0;  ///< SteamOS の既定
 constexpr double kNsGraceStep = 50.0;
 
+/** 「一定の雑音を消す」の段のノード（filter-chain の入口。LADSPA の control はこのノードの Props の params にある）。 */
+constexpr const char* kSteadyNodeName = "frame_mic_denoise_capture";
+/** 「一定の雑音を消す」のノード名の頭（つながりの段の見分け。_capture / _source が付く）。 */
+constexpr const char* kSteadyStagePrefix = "frame_mic_denoise";
+/** 消す強さ（dB）の param 名と範囲（contrib/denoise/frame-mic-denoise.conf。0 dB = 何もしない）。 */
+constexpr const char* kSteadyDbParam = "denoise:Strength (dB)";
+constexpr double kSteadyDbMin = 0.0;
+constexpr double kSteadyDbMax = 40.0;
+constexpr double kSteadyDbDefault = 20.0;  ///< frame-mic-denoise.conf の既定
+constexpr double kSteadyDbStep = 1.0;
+
 /**
  * 判定の厳しさを範囲に収め、1% 単位に丸める。
  * @param value 値（%）
@@ -43,12 +58,20 @@ double clampNsVad(double value);
  */
 double clampNsGrace(double value);
 
+/**
+ * 一定の雑音を消す強さを範囲に収め、1 dB 単位に丸める。
+ * @param value 値（dB）
+ * @return 丸めた値
+ */
+double clampSteadyDb(double value);
+
 /** マイクの音の通り道の 1 段。 */
 struct ChainStage {
     enum class Kind {
         Eq,                ///< EQ（音質補正。eq_capture / eq_source）
         EchoCancel,        ///< エコー除去（echo_cancel_capture / echo_cancel_source）
         NoiseSuppression,  ///< ノイズ除去（ns_* / dsp_*）
+        SteadyNoise,       ///< 一定の雑音を消す（frame_mic_denoise_capture / frame_mic_denoise_source）
         Other,             ///< 知らないフィルター（name に接頭辞）
     };
     Kind kind = Kind::Other;
@@ -74,6 +97,8 @@ enum class MicError {
     WriteNsParams,   ///< ノイズ除去の強さを変えられない（pw-cli）
     WriteEcho,       ///< プリセットのうち、エコー除去の切り替えに失敗（wpctl）
     WriteNs,         ///< プリセットのうち、ノイズ除去の切り替えに失敗（wpctl）
+    WriteSteady,     ///< 一定の雑音を消すの切り替えに失敗（wpctl）
+    WriteSteadyDb,   ///< 一定の雑音を消す強さを変えられない（pw-cli）
     WriteMute,       ///< ミュートを解除できない（wpctl set-mute ... 0）
     WriteMuteOn,     ///< ミュートできない（wpctl set-mute ... 1）
     WriteOutput,     ///< 音の出口を切り替えられない（wpctl set-default）
@@ -90,6 +115,14 @@ struct NsParams {
     double grace = 0.0;       ///< 余韻（VAD の猶予、ms）
 };
 
+/** 「一定の雑音を消す」の段の今の値（pw-dump frame_mic_denoise_capture から読む）。 */
+struct SteadyParams {
+    bool nodeKnown = false;  ///< frame_mic_denoise_capture が見つかったか（無い = frame-mic-tuner-denoise.service が動いていない）
+    int nodeId = -1;         ///< そのノードの id（サービスが起動し直すと変わる）
+    bool dbKnown = false;
+    double db = 0.0;         ///< 消す強さ（dB）
+};
+
 /** ある時点のマイクの状態（ワーカーが読み、画面が写しを使う）。 */
 struct MicState {
     bool loaded = false;        ///< 一度でも読んだか
@@ -97,6 +130,9 @@ struct MicState {
     bool echo = false;          ///< エコー除去（true = オン）
     bool nsKnown = false;       ///< ノイズ除去の値が読めたか
     bool ns = false;            ///< ノイズ除去（true = オン）
+    bool steadyKnown = false;   ///< 一定の雑音を消すの値が読めたか
+    bool steady = false;        ///< 一定の雑音を消す（true = オン）
+    bool steadyMissing = false; ///< ほかの設定は読めたのに frame-mic.steady-noise が無い（入れたあと Frame をまだ再起動していない）
     bool linksKnown = false;    ///< マイクから出力までのつながりをたどれたか
     bool inUse = false;         ///< マイク使用中（通り道にフィルターが入っているか、既定のマイクから録っているアプリがいる）
     bool muteKnown = false;     ///< 既定のマイクのミュートが読めたか
@@ -106,6 +142,8 @@ struct MicState {
     Autostart autostart = Autostart::Unknown;
     NsParams nsParams;          ///< ノイズ除去の強さ
     bool nsApplied = true;      ///< ノイズ除去の強さの「かけたい値」を今のノードにかけ終えている（かけたい値が無いときも true）
+    SteadyParams steadyParams;  ///< 一定の雑音を消す強さ
+    bool steadyApplied = true;  ///< 一定の雑音を消す強さの「かけたい値」を今のノードにかけ終えている（かけたい値が無いときも true）
     AudioDevices devices;       ///< 音の出口とマイクの一覧と、今の既定
     MicError readError = MicError::None;   ///< 直近の読み取りの失敗
     MicError writeError = MicError::None;  ///< 直近の書き込みの失敗（次に成功するまで残す）
@@ -226,7 +264,74 @@ void showHiddenNs(NsParams& read, NsHiddenWrite& hidden, double vad, double grac
 bool needNsWrite(const NsParams& now, double vad, double grace, bool onlyIfChanged, const NsHiddenWrite& hidden);
 
 /**
- * 設定・つながり・ミュート・自動起動・ノイズ除去の強さをまとめて読む（外部コマンドを最大 6 回呼ぶ。1 回 10〜40ms 程度）。
+ * 「pw-dump frame_mic_denoise_capture」の出力（JSON）から、ノードの id と消す強さを読む。
+ * @param text 出力
+ * @return 読めた値（ノードが無ければ nodeKnown = false）
+ */
+SteadyParams parseSteadyDump(const std::string& text);
+
+/**
+ * 一定の雑音を消す段の今の値を読む（pw-dump frame_mic_denoise_capture）。
+ * @return 読めた値
+ */
+SteadyParams readSteadyParams();
+
+/**
+ * 一定の雑音を消す段に、消す強さを書く（pw-cli set-param <id> Props '{ params = [ "denoise:Strength (dB)" N ] }'）。
+ * 値は範囲に丸めてから文字列にする。PipeWire の再起動はしない（その場で効く）。
+ * @param nodeId frame_mic_denoise_capture の id
+ * @param db 消す強さ（dB）
+ * @return 書けたら true
+ */
+bool writeSteadyParams(int nodeId, double db);
+
+/**
+ * 書いた値が読み返しにまだ出ていない「一定の雑音を消す」の段（NsHiddenWrite と同じ、PipeWire 1.6 の動き。
+ * オフの間は WirePlumber がつながないので、一度も動いていないことが多い）。
+ */
+struct SteadyHiddenWrite {
+    int nodeId = -1;       ///< そのノードの id（-1 = 隠れていない）
+    double staleDb = 0.0;  ///< 読み返しに出ている前の値
+};
+
+/**
+ * 書いた直後に読んだ値から、書いた値が隠れているかを決める。
+ * @param read 書いた直後に読んだ値
+ * @param nodeId 書いたノードの id
+ * @param db 書いた強さ（dB）
+ * @return 隠れていればそのノードと前の値（読み返しが書いた値と同じなら nodeId = -1）
+ */
+SteadyHiddenWrite noteSteadyWrite(const SteadyParams& read, int nodeId, double db);
+
+/**
+ * 隠れている書いた値を、読んだ前の値の代わりに見せる（showHiddenNs と同じ決まり）。
+ * @param read 読んだ値（前の値なら書いた値に置き換える）
+ * @param hidden 隠れている印
+ * @param db 書いた強さ（dB）
+ */
+void showHiddenSteady(SteadyParams& read, SteadyHiddenWrite& hidden, double db);
+
+/**
+ * 出口の設定をかけるときに、一定の雑音を消す強さを書くか（needNsWrite と同じ決まり）。
+ * @param now 今読んだ値（生の読み返し）
+ * @param db かける強さ（dB）
+ * @param onlyIfChanged 今と同じものは書かないか
+ * @param hidden 隠れている印
+ * @return 書くなら true
+ */
+bool needSteadyWrite(const SteadyParams& now, double db, bool onlyIfChanged, const SteadyHiddenWrite& hidden);
+
+/**
+ * 「wpctl settings」の一覧の出力から、3 つの設定（エコー除去・ノイズ除去・一定の雑音を消す）を読む。
+ * エコー除去・ノイズ除去が無ければ readError = NotInstalled。一定の雑音を消すだけが無いときは失敗にせず、
+ * steadyMissing を立てる（入れたあと Frame をまだ再起動していない。古い WirePlumber の設定のまま）。
+ * @param text 出力
+ * @param state echoKnown・echo・nsKnown・ns・steadyKnown・steady・steadyMissing・readError を書き込む
+ */
+void parseSettingsList(const std::string& text, MicState& state);
+
+/**
+ * 設定・つながり・ミュート・自動起動・ノイズ除去の強さをまとめて読む（外部コマンドを最大 7 回呼ぶ。1 回 10〜40ms 程度）。
  * @param withAutostart 自動起動の状態も読むか（false なら autostart は Unknown のまま）
  * @return 読んだ状態（writeError は None）
  */
@@ -242,7 +347,7 @@ bool sameMicState(const MicState& a, const MicState& b);
 
 /**
  * WirePlumber の設定を書き、保存する（wpctl settings --save キー true|false）。
- * @param key kEchoCancelKey か kNoiseSuppressionKey
+ * @param key kEchoCancelKey・kNoiseSuppressionKey・kSteadyNoiseKey
  * @param value 書く値
  * @return 書けたら true
  */

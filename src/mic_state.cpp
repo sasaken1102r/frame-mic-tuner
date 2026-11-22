@@ -65,6 +65,8 @@ ChainStage stageOf(const std::string& prefix) {
     stage.name = prefix;
     if (prefix == "eq") {
         stage.kind = ChainStage::Kind::Eq;
+    } else if (startsWith(prefix, kSteadyStagePrefix)) {
+        stage.kind = ChainStage::Kind::SteadyNoise;
     } else if (startsWith(prefix, "echo_cancel")) {
         stage.kind = ChainStage::Kind::EchoCancel;
     } else if (startsWith(prefix, "ns") || startsWith(prefix, "dsp")) {
@@ -243,20 +245,29 @@ Autostart parseAutostart(const std::string& text) {
     return Autostart::Unknown;  // masked・static など（このアプリでは使わない形）
 }
 
+void parseSettingsList(const std::string& text, MicState& state) {
+    state.echoKnown = parseSettingFromList(text, kEchoCancelKey, state.echo);
+    state.nsKnown = parseSettingFromList(text, kNoiseSuppressionKey, state.ns);
+    state.steadyKnown = parseSettingFromList(text, kSteadyNoiseKey, state.steady);
+    if (!state.steadyKnown) state.steady = false;
+    // 一定の雑音を消すだけが無い = 入れたあと Frame をまだ再起動していない（WirePlumber が前の 90-frame-mic.conf のまま）。
+    // ほかの 2 つは使えるので、失敗にはしない
+    state.steadyMissing = state.echoKnown && state.nsKnown && !state.steadyKnown;
+    if (!state.echoKnown || !state.nsKnown) {
+        // 一覧に無い = WirePlumber に frame-mic-tracker と 90-frame-mic.conf が入っていない
+        std::fprintf(stderr, "[マイク] 設定 %s / %s が一覧にありません\n", kEchoCancelKey, kNoiseSuppressionKey);
+        state.readError = MicError::NotInstalled;
+    }
+}
+
 MicState readMicState(bool withAutostart) {
     MicState state;
     state.loaded = true;
-    // 2 つの設定は、一覧表示 1 回でまとめて読む（wpctl の起動 1 回ぶん、キーごとに呼ぶのと同じ重さ）
+    // 3 つの設定は、一覧表示 1 回でまとめて読む（wpctl の起動 1 回ぶん、キーごとに呼ぶのと同じ重さ）
     const std::vector<std::string> settingsArgv = {"wpctl", "settings"};
     const CommandResult settings = runCommand(settingsArgv);
     if (settings.ok()) {
-        state.echoKnown = parseSettingFromList(settings.out, kEchoCancelKey, state.echo);
-        state.nsKnown = parseSettingFromList(settings.out, kNoiseSuppressionKey, state.ns);
-        if (!state.echoKnown || !state.nsKnown) {
-            // 一覧に無い = WirePlumber に frame-mic-tracker と 90-frame-mic.conf が入っていない
-            std::fprintf(stderr, "[マイク] 設定 %s / %s が一覧にありません\n", kEchoCancelKey, kNoiseSuppressionKey);
-            state.readError = MicError::NotInstalled;
-        }
+        parseSettingsList(settings.out, state);
     } else {
         std::fprintf(stderr, "[マイク] 設定を読めません: %s\n", describeCommand(settingsArgv, settings).c_str());
         state.readError = MicError::ReadSettings;
@@ -275,6 +286,7 @@ MicState readMicState(bool withAutostart) {
     state.muteKnown = readMute(state.muted);
 
     state.nsParams = readNsParams();
+    state.steadyParams = readSteadyParams();
 
     if (!withAutostart) return state;
     // is-enabled は「無効」「見つからない」でも 0 以外の終了コードを返すので、出力で見分ける
@@ -299,9 +311,14 @@ bool sameMicState(const MicState& a, const MicState& b) {
     const NsParams& pb = b.nsParams;
     const bool sameNs = pa.nodeKnown == pb.nodeKnown && pa.nodeId == pb.nodeId && pa.vadKnown == pb.vadKnown &&
                         pa.vad == pb.vad && pa.graceKnown == pb.graceKnown && pa.grace == pb.grace;
+    const SteadyParams& sa = a.steadyParams;
+    const SteadyParams& sb = b.steadyParams;
+    const bool sameSteady = a.steadyKnown == b.steadyKnown && a.steady == b.steady && a.steadyMissing == b.steadyMissing &&
+                            sa.nodeKnown == sb.nodeKnown && sa.nodeId == sb.nodeId && sa.dbKnown == sb.dbKnown &&
+                            sa.db == sb.db && a.steadyApplied == b.steadyApplied;
     return a.loaded == b.loaded && a.echoKnown == b.echoKnown && a.echo == b.echo && a.nsKnown == b.nsKnown &&
            a.ns == b.ns && a.linksKnown == b.linksKnown && a.inUse == b.inUse && a.muteKnown == b.muteKnown &&
-           a.muted == b.muted && a.autostart == b.autostart && sameNs && a.nsApplied == b.nsApplied &&
+           a.muted == b.muted && a.autostart == b.autostart && sameNs && a.nsApplied == b.nsApplied && sameSteady &&
            a.devices == b.devices && a.readError == b.readError && a.writeError == b.writeError;
 }
 
@@ -313,43 +330,142 @@ double clampNsGrace(double value) {
     return std::round(std::clamp(value, kNsGraceMin, kNsGraceMax) / 10.0) * 10.0;
 }
 
-NsParams parseNsDump(const std::string& text) {
-    NsParams params;
+double clampSteadyDb(double value) {
+    return std::round(std::clamp(value, kSteadyDbMin, kSteadyDbMax));
+}
+
+namespace {
+
+/**
+ * pw-dump の出力（JSON）から、名前の合うノードの id と、LADSPA の control の値（名前 → 値）を読む。
+ * @param text 出力
+ * @param nodeName ノード名（例: "ns_capture"）
+ * @param nodeId 見つかったときの id の書き込み先
+ * @param controls 見つかったときの control の書き込み先（info.params.Props の "params": [名前, 値, ...]）
+ * @return ノードが見つかったら true
+ */
+bool parseFilterDump(const std::string& text, const char* nodeName, int& nodeId, std::map<std::string, double>& controls) {
     JsonValue root;
     std::string error;
-    if (!parseJson(text, root, error) || root.type != JsonValue::Type::Array) return params;
+    if (!parseJson(text, root, error) || root.type != JsonValue::Type::Array) return false;
     for (const JsonValue& object : root.items) {
         const JsonValue* info = object.get("info");
         const JsonValue* props = info != nullptr ? info->get("props") : nullptr;
         const JsonValue* name = props != nullptr ? props->get("node.name") : nullptr;
-        if (name == nullptr || !name->isString() || name->text != kNsNodeName) continue;
+        if (name == nullptr || !name->isString() || name->text != nodeName) continue;
         const JsonValue* id = object.get("id");
         if (id == nullptr || !id->isNumber()) continue;
-        params.nodeKnown = true;
-        params.nodeId = static_cast<int>(id->number);
+        nodeId = static_cast<int>(id->number);
         // info.params.Props は複数のオブジェクトの配列。LADSPA の control は "params": [名前, 値, 名前, 値, ...] にある
         const JsonValue* paramsObject = info->get("params");
         const JsonValue* propsList = paramsObject != nullptr ? paramsObject->get("Props") : nullptr;
-        if (propsList == nullptr || propsList->type != JsonValue::Type::Array) break;
+        if (propsList == nullptr || propsList->type != JsonValue::Type::Array) return true;
         for (const JsonValue& entry : propsList->items) {
             const JsonValue* list = entry.get("params");
             if (list == nullptr || list->type != JsonValue::Type::Array) continue;
             for (size_t i = 0; i + 1 < list->items.size(); i += 2) {
                 const JsonValue& key = list->items[i];
                 const JsonValue& value = list->items[i + 1];
-                if (!key.isString() || !value.isNumber()) continue;
-                if (key.text == kNsVadParam) {
-                    params.vadKnown = true;
-                    params.vad = value.number;
-                } else if (key.text == kNsGraceParam) {
-                    params.graceKnown = true;
-                    params.grace = value.number;
-                }
+                if (key.isString() && value.isNumber()) controls[key.text] = value.number;
             }
         }
-        break;
+        return true;
+    }
+    return false;
+}
+
+}  // namespace
+
+NsParams parseNsDump(const std::string& text) {
+    NsParams params;
+    std::map<std::string, double> controls;
+    if (!parseFilterDump(text, kNsNodeName, params.nodeId, controls)) return params;
+    params.nodeKnown = true;
+    const auto vad = controls.find(kNsVadParam);
+    if (vad != controls.end()) {
+        params.vadKnown = true;
+        params.vad = vad->second;
+    }
+    const auto grace = controls.find(kNsGraceParam);
+    if (grace != controls.end()) {
+        params.graceKnown = true;
+        params.grace = grace->second;
     }
     return params;
+}
+
+SteadyParams parseSteadyDump(const std::string& text) {
+    SteadyParams params;
+    std::map<std::string, double> controls;
+    if (!parseFilterDump(text, kSteadyNodeName, params.nodeId, controls)) return params;
+    params.nodeKnown = true;
+    const auto db = controls.find(kSteadyDbParam);
+    if (db != controls.end()) {
+        params.dbKnown = true;
+        params.db = db->second;
+    }
+    return params;
+}
+
+SteadyParams readSteadyParams() {
+    const std::vector<std::string> argv = {"pw-dump", kSteadyNodeName};
+    const CommandResult result = runCommand(argv);
+    if (!result.ok()) {
+        std::fprintf(stderr, "[一定の雑音] 値を読めません: %s\n", describeCommand(argv, result).c_str());
+        return SteadyParams();
+    }
+    // サービスが動いていないときは空の配列（[]）が返るだけなので、ログは出さない（毎秒読むため）
+    return parseSteadyDump(result.out);
+}
+
+bool writeSteadyParams(int nodeId, double db) {
+    if (nodeId < 0) return false;
+    // 数値はアプリで範囲に丸めてから文字列にする（外から来た文字列は混ぜない）
+    char pod[128];
+    std::snprintf(pod, sizeof(pod), "{ params = [ \"%s\" %.1f ] }", kSteadyDbParam, clampSteadyDb(db));
+    const std::vector<std::string> argv = {"pw-cli", "set-param", std::to_string(nodeId), "Props", pod};
+    const CommandResult result = runCommand(argv);
+    std::fprintf(stderr, "[一定の雑音] %s\n", describeCommand(argv, result).c_str());
+    return result.ok();
+}
+
+namespace {
+
+/**
+ * 読んだ値が、その強さと同じか（1 dB 単位に丸めた値どうし）。
+ */
+bool sameSteadyValue(const SteadyParams& read, double db) {
+    return read.dbKnown && std::fabs(read.db - db) < 0.5;
+}
+
+}  // namespace
+
+SteadyHiddenWrite noteSteadyWrite(const SteadyParams& read, int nodeId, double db) {
+    SteadyHiddenWrite hidden;
+    if (!read.nodeKnown || read.nodeId != nodeId || !read.dbKnown) return hidden;
+    if (sameSteadyValue(read, clampSteadyDb(db))) return hidden;
+    hidden.nodeId = nodeId;
+    hidden.staleDb = read.db;
+    return hidden;
+}
+
+void showHiddenSteady(SteadyParams& read, SteadyHiddenWrite& hidden, double db) {
+    if (hidden.nodeId < 0) return;
+    if (!read.nodeKnown || read.nodeId != hidden.nodeId) {
+        hidden = SteadyHiddenWrite();
+        return;
+    }
+    if (sameSteadyValue(read, hidden.staleDb)) {
+        read.db = clampSteadyDb(db);
+    } else if (!sameSteadyValue(read, clampSteadyDb(db))) {
+        hidden = SteadyHiddenWrite();
+    }
+}
+
+bool needSteadyWrite(const SteadyParams& now, double db, bool onlyIfChanged, const SteadyHiddenWrite& hidden) {
+    if (!onlyIfChanged) return true;
+    if (hidden.nodeId >= 0 && hidden.nodeId == now.nodeId) return true;
+    return !sameSteadyValue(now, clampSteadyDb(db));
 }
 
 NsParams readNsParams() {
@@ -459,6 +575,7 @@ std::string describeChain(const MicState& state) {
             case ChainStage::Kind::Eq: text += " → EQ"; break;
             case ChainStage::Kind::EchoCancel: text += " → エコー除去"; break;
             case ChainStage::Kind::NoiseSuppression: text += " → ノイズ除去"; break;
+            case ChainStage::Kind::SteadyNoise: text += " → 一定の雑音を消す"; break;
             case ChainStage::Kind::Other: text += " → " + stage.name; break;
         }
     }

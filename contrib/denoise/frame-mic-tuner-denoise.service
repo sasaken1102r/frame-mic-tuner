@@ -1,0 +1,13 @@
+[Unit]
+Description=Frame Mic Tuner steady-noise remover (PipeWire filter-chain for the Steam Frame microphone)
+# PipeWire の別のプロセス（クライアント）として動く。PipeWire が止まると一緒に止まり、動き出すと一緒に動く
+After=pipewire.service
+BindsTo=pipewire.service
+
+[Service]
+ExecStart=/usr/bin/pipewire -c %h/.local/share/frame-mic-tuner/frame-mic-denoise.conf
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=pipewire.service

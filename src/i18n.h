@@ -77,7 +77,21 @@ struct UiText {
     const char* nsGraceHint;       ///< 余韻の説明
     const char* nsInactive;        ///< ノイズ除去がオフの間の説明
     const char* nsReset;           ///< 「標準に戻す」
-    const char* nsDefaultNote;     ///< 「標準に戻す」の左の説明（標準の値）    // ---- 外付けのマイク ----
+    const char* nsDefaultNote;     ///< 「標準に戻す」の左の説明（標準の値）
+    // ---- 細かく調整: ノイズ除去の種類（オフ / Valve のノイズ除去 / 一定の雑音を消す） ----
+    const char* nsModeValve;       ///< 切り替えの真ん中（Valve のノイズ除去。声以外を消す）
+    const char* nsModeSteady;      ///< 切り替えの右（Frame Mic Tuner の、一定の雑音を消す）
+    const char* steadyDb;          ///< 消す強さ（バーの見出し）
+    const char* steadyDbHint;      ///< 消す強さの説明（バーの見出しの下の 1 行。上げすぎたときのこと）
+    const char* steadyNote;        ///< 息・ささやき声は残し、一定の音だけ下げる旨（バーの下）
+    const char* steadyDefaultNote; ///< 「標準に戻す」の左の説明（標準は 20 dB）
+    const char* steadyNeedsReboot; ///< 設定がまだ無い（入れたあと Frame を再起動していない）ときの説明
+    const char* steadyStopped;     ///< ノードが無い（frame-mic-tuner-denoise.service が動いていない）ときの説明
+    const char* stageSteady;       ///< つながりの段（一定の雑音を消す）
+    const char* sumSteadyOn;       ///< 設定のまとめの後ろに足す「・一定の雑音を消す」
+    const char* errWriteSteady;    ///< 一定の雑音を消すの切り替えに失敗（wpctl）
+    const char* errWriteSteadyDb;  ///< 一定の雑音を消す強さを変えられない（pw-cli）
+    // ---- 外付けのマイク ----
     const char* externalNowFormat;    ///< 「いまは %s を使っています」
     const char* externalExplain;      ///< 処理がかかるのは内蔵マイクだけ
     const char* externalSavedFormat;  ///< 覚えている設定（%1$s = 出口、%2$s = 設定のまとめ）

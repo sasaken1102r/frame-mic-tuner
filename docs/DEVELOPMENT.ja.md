@@ -5,7 +5,8 @@
 Steam Frame（aarch64 SteamOS）で、マイクの**エコー除去**と**ノイズ除去**を SteamVR のダッシュボードから切り替えるパネル。
 ヘッドセットを被ったまま、イヤホンのときはエコー除去を切って小さな音まで入れ、スピーカーのときはエコー除去を入れてスピーカーの音の回り込みを消す。
 
-- 切り替えの仕組み（WirePlumber のスクリプト）は `contrib/wireplumber/`（下の「切り替えの仕組み」）。アプリはその設定 `frame-mic.echo-cancel`・`frame-mic.noise-suppression` を `wpctl settings --save` で書き換える
+- 切り替えの仕組み（WirePlumber のスクリプト）は `contrib/wireplumber/`（下の「切り替えの仕組み」）。アプリはその設定 `frame-mic.echo-cancel`・`frame-mic.noise-suppression`・`frame-mic.steady-noise` を `wpctl settings --save` で書き換える
+- 「一定の雑音を消す」（息やささやき声を残すノイズ除去）は、このアプリの LADSPA プラグインを別の PipeWire のプロセスで動かす（`src/denoise/`・`contrib/denoise/`。下の「一定の雑音を消す」）
 - ダッシュボードのオーバーレイ、Vulkan での画像の送り方、終了処理、＋への登録、二重起動の扱いは、同じ作者の Steam Frame 向けオーバーレイ（未公開）と同じ作り
 
 ## Frame のマイクの音の流れ
@@ -15,6 +16,7 @@ alsa_input.platform-sound.HiFi__Mic__source（2ch、デジタルマイク 2 個�
  → eq_capture / eq_source（EQ: 音質補正 ＋ 2ch→1ch）
  → echo_cancel_capture / echo_cancel_source（WebRTC のエコー除去＋自動音量調整。Valve の元の動きでは、出力が Frame のスピーカー以外のときは予備の echo_cancel_fallback_capture / echo_cancel_fallback_source。このアプリの tracker は予備を使わない）
  → ns_capture / ns_source（ノイズ除去: 声らしさで判定して、声でない音を消す）
+ → frame_mic_denoise_capture / frame_mic_denoise_source（一定の雑音を消す。このアプリのもの。いつもアプリ寄りの最後）
  → alsa_loopback_stream → alsa_loopback_device...HiFi__Mic__source（既定のマイク。アプリはここから録る）
 ```
 
@@ -23,6 +25,7 @@ alsa_input.platform-sound.HiFi__Mic__source（2ch、デジタルマイク 2 個�
   - 20261007 まで: 3 段とも有効
   - 20261015 から: エコー除去の予備（`echo_cancel_fallback_source` / `_sink`）が増えた。既定のマイクと出力がどちらも内蔵（`alsa_loopback_device.alsa_input...HiFi__Mic__source` と `alsa_loopback_device.stereo.alsa_output...HiFi__Speaker__sink`）なら EQ・本体のエコー除去・ノイズ除去、そうでなければ予備のエコー除去（＋内蔵マイクなら EQ）。予備の `_sink` の行き先は既定の出力、`_source` の行き先は既定のマイクの中身の機器（ループバックの `target.object`）。**本体と予備は同時には入れない**（どちらも自動音量調整 `gain_control2` が入っているので、両方入れると 2 回かかって声が大きくなりすぎる）
 - 口の小さな音（ぺちゃくちゃ音など）は、エコー除去で大きく削られ、ノイズ除去で完全な無音にされる。イヤホンで使うならエコー除去は要らないので、切れるようにした
+- 息やささやき声も、Valve のノイズ除去（RNNoise ＋声の判定のゲート）では、いちばん弱く（1% / 50ms）しても消える。そこで、一定の雑音だけを引く段を足した（下の「一定の雑音を消す」）。Valve のノイズ除去とはどちらか 1 つ（パネルは 3 つから選ぶ）
 
 ## 切り替えの仕組み（contrib/wireplumber）
 
@@ -30,8 +33,14 @@ alsa_input.platform-sound.HiFi__Mic__source（2ch、デジタルマイク 2 個�
 |---|---|
 | `frame-mic-tracker.lua` | `~/.local/share/wireplumber/scripts/frame-mic-tracker.lua` |
 | `90-frame-mic.conf` | `~/.config/wireplumber/wireplumber.conf.d/90-frame-mic.conf`（`@SCRIPT_PATH@` を上のスクリプトの絶対パスに置き換える） |
+| `contrib/denoise/frame-mic-denoise.conf` | `~/.local/share/frame-mic-tuner/frame-mic-denoise.conf`（`@PLUGIN_PATH@` をプラグインの絶対パスに置き換える。別の PipeWire のプロセスの設定） |
+| `contrib/denoise/frame-mic-tuner-denoise.service` | `~/.config/systemd/user/frame-mic-tuner-denoise.service`（`pipewire -c` で上の設定を動かす。`WantedBy=pipewire.service`・`BindsTo=pipewire.service`。install.sh が enable して起動する） |
+| （ビルドしたもの）`frame-mic-denoise.so` | `~/.local/lib/frame-mic-tuner/frame-mic-denoise.so`（LADSPA プラグイン。リリースの tar.gz にも入る） |
 
-- `90-frame-mic.conf`: Valve の tracker（`steamos.microphone-tracker`）を `disabled` にして、自作の `frame-mic-tracker.lua` を読み込む。設定 `frame-mic.echo-cancel`（既定 true）と `frame-mic.noise-suppression`（既定 false）を定義する
+- `90-frame-mic.conf`: Valve の tracker（`steamos.microphone-tracker`）を `disabled` にして、自作の `frame-mic-tracker.lua` を読み込む。設定 `frame-mic.echo-cancel`（既定 true）・`frame-mic.noise-suppression`（既定 false）・`frame-mic.steady-noise`（既定 false。0.4.0 から）を定義する
+- `frame-mic.steady-noise`: `frame_mic_denoise_source` を、`frame-mic.noise-suppression` と同じ決まり（録音のストリームがいて、既定のマイクが内蔵のとき）で入れる。入れたあと再起動するまでは、WirePlumber は前の `90-frame-mic.conf` のままなので、`wpctl settings frame-mic.steady-noise` は「not found」。アプリはこのときだけは「切り替えの仕組みが入っていない」の失敗にせず、「一定の雑音を消す」を灰色にして「Frame を再起動すると使えます」と出す
+- 並び（一定の雑音を消すを、アプリ寄りの最後に置く）: WirePlumber は smart filter を `/usr/share/wireplumber/scripts/lib/filter-utils.lua` の `insertFilterSorted` で並べる。リストの先頭がアプリ寄りで、新しく来たフィルターは、すでにあるフィルターの `filter.smart.after` に自分の名前が書いてあるときだけ、そのフィルターより前（アプリ寄り）に入る。そうでなければマイク寄りに入る。新しいフィルター自身の `filter.smart.before` / `after` では動かせない（Valve の EQ とノイズ除去の前後も、もともと読み込みの順番しだい）。そこで tracker は、Valve のマイク側のフィルター（`Audio/Source` の `eq_source`・`echo_cancel_source`・`ns_source` など）の `filter.smart.after` に、`filters` メタデータで `frame-mic-tuner-denoise`（`filter.smart.name`）を足す（`put_denoise_last`。値が同じなら書かない。書くたびに WirePlumber がつなぎ直すため）。Valve の設定ファイルには触らない
+- 一定の雑音を消すのノードにも `steamos.mic_filter = true` を付けてある。Valve のフィルターと同じく、アプリ（Steam のマイクの一覧など）からは見えず、tracker が受け持つ
 - `frame-mic-tracker.lua`: 録音のストリームがいる間だけ段を入れるのは元と同じ。予備が無い 20261007 までは、0.3.3 までと全く同じ（名前の頭で見分けて、EQ はいつも、`echo_cancel*` と `ns_*`・`dsp_*` は設定どおりに入れる。既定のマイク・出力は見ない）。予備があるときの Valve との違いは 4 つ
   - エコー除去（`echo_cancel_*`）とノイズ除去（`ns_source`）を、それぞれ設定で切れる。設定を変えると、使用中のマイクにもその場で反映する（PipeWire の再起動は要らない。録音中に切り替えても音は途切れない）
   - ノイズ除去は、出力によらず設定どおり（Valve は出力が Frame のスピーカーのときだけ入れる）
@@ -53,6 +62,7 @@ alsa_input.platform-sound.HiFi__Mic__source（2ch、デジタルマイク 2 個�
 wpctl settings --save frame-mic.echo-cancel false        # エコー除去を切る（イヤホン）
 wpctl settings --save frame-mic.echo-cancel true         # エコー除去を入れる（スピーカー）
 wpctl settings --save frame-mic.noise-suppression true   # ノイズ除去を入れる
+wpctl settings --save frame-mic.steady-noise true        # 一定の雑音を消すを入れる（ノイズ除去とはどちらか 1 つにする。両方オンならアプリは一定の雑音を消すとして扱う）
 wpctl settings frame-mic.echo-cancel                     # 今の値（Value: true (Saved: true)）
 ```
 
@@ -231,6 +241,38 @@ USB-C のイヤホン変換で、しばらく無音のあとに鳴った音の�
 - 保存した値（30% / 600ms）の設定ファイルで起動すると、ログに「ノード 53 に保存した値をかけます」と出て、`pw-cli` の値が 30 / 600 になった
 - 効き方（参考。話していない静かな部屋、ノイズ除去オン・マイク使用中、0.5 秒ごとのレベル）: 判定の厳しさ 0% の間は背景の音が rms -57〜-85 dBFS で通り、99% と 23% の間はほぼ無音（-90 dBFS）
 
+## 一定の雑音を消す
+
+Valve のノイズ除去（LADSPA `noise_suppressor_mono` = RNNoise ＋声の判定のゲート）は、声らしくない音を全部消すので、息やささやき声も消える（判定の厳しさ 1%・余韻 50ms まで弱くしても）。空気清浄機やファンのような、ずっと鳴っている音だけを下げたいので、周波数ごとに雑音を引く段を自作した。
+
+- 作り: LADSPA プラグイン `frame_mic_denoise`（`src/denoise/ladspa_denoise.cpp`、中身は `src/denoise/spectral_denoiser.*`）。control は `Strength (dB)` だけ（0〜40、既定 20、0 = 素通し）
+- 動かし方: 別の小さな PipeWire のプロセス（`frame-mic-tuner-denoise.service` → `pipewire -c ~/.local/share/frame-mic-tuner/frame-mic-denoise.conf`）の filter-chain に読ませ、内蔵マイクの smart filter（`filter.smart.target` は `alsa.card_name = "SM8250 LPASS"`・`device.profile.description = "Mic"`、`filter.smart.name = frame-mic-tuner-denoise`、最初は `filter.smart.disabled = true`）として通り道に入れる。PipeWire・WirePlumber の再起動は要らない（このプロセスはクライアント。起動し直しても、このフィルターが一瞬抜けるだけ）
+- ノード: 入口 `frame_mic_denoise_capture`（LADSPA の control はここの Props の params。param 名 `denoise:Strength (dB)`）、出口 `frame_mic_denoise_source`
+- オン・オフは `frame-mic.steady-noise`（上の「切り替えの仕組み」）。強さはアプリが `pw-cli set-param <id> Props '{ params = [ "denoise:Strength (dB)" 20.0 ] }'` でその場で変える。読むのは `pw-dump frame_mic_denoise_capture`（サービスが動いていなければ `[]`）。ノイズ除去の強さと同じく、出口ごとに覚え（`steady_noise_db`）、起動したとき・出口が変わったとき・ノードの id が変わったとき（サービスが起動し直した）にかけ直す。PipeWire 1.6 の「隠れた書き込み」も同じ扱い（`SteadyHiddenWrite`）
+- サービスが止まると、このフィルターが通り道から抜けるだけで、マイクはそのまま（処理なしで）使える。パネルは設定があるのにノードが無いとき「一定の雑音を消すサービスが動いていません（frame-mic-tuner-denoise.service）」と出す
+- 遅れは 1 フレーム（1024 サンプル、48 kHz で約 21ms）
+
+やり方（`SpectralDenoiser`）:
+
+- 1024 サンプルの窓（hann の平方根。分析と合成の両方にかける）を 512 ずつずらして FFT。周波数ごとに処理して、逆 FFT で重ね足す
+- 雑音の見積もり: 周波数ごとのパワーをならし（alpha 0.85）、その最小値を雑音とする。最小値は 36 フレームの小窓 8 個ぶん（約 3 秒）で取り、最小値は小さめに出るので 2 倍する（bias ×2）。ずっと鳴っている音は最小値にも残るが、息・ささやき・声のように出たり消えたりする音は最小値に入らない
+- ゲイン: 雑音に対する比から Wiener 風のゲインを出す（事前 SN 比は decision-directed、0.97）。下限（floor）が強さ（20 dB なら −20 dB まで）。ゼロにはしないので、雑音が「消える」のではなく「下がる」。ゲインは隣の 3 つの周波数でならす（ミュージカルノイズを減らす）
+- 80 Hz 以下は切る（ハイパス。床やファンの低いうなり）
+- `ctest` の `denoise`（`tests/denoise_test.cpp`）: 色の付いたホワイトノイズに、息のような短い雑音のかたまりと、声のような倍音のある音を重ねて通し、「すき間の雑音は大きく下がる」「かたまりと声はほとんど削られない」「強さ 0 は素通し」を確かめる。`tests/denoise_wav.cpp`（`denoise-wav`）は wav を通して試し聞き・測定する道具（リリースには入れない）
+
+確かめたこと（Frame。テスト用の文、合成したささやき声と息の音を PC のスピーカーから流し、空気清浄機を最大にしてサーキュレーターも回した。マイクの生の雑音は約 −60 dBFS）:
+
+| 処理 | 一定の雑音 | 息・ささやき声 |
+|---|---|---|
+| Valve のノイズ除去（判定の厳しさ 1%・余韻 50ms でも） | — | 息が 10〜55 dB 下がった |
+| 一定の雑音を消す（強さ 20 dB、既定） | 約 20 dB 下がった | 0〜1.4 dB |
+| 一定の雑音を消す（強さ 25 dB） | 約 26 dB 下がった | — |
+
+測り方:
+
+- 段ごとの音は、`pw-record --target 0` で録音のストリームを作り、`pw-link` でマイクやフィルターの出口につないで録った。どちらも `PIPEWIRE_REMOTE=pipewire-0-manager` で動かす。`pw-record --target <ノード名>` だと、WirePlumber がストリームを smart filter の後ろへつなぎ直してしまい、狙った段の音にならない。マイクの生のノード（`alsa_input...HiFi__Mic__source`）はふつうのクライアントからは見えない
+- ヘッドセットを被っていないと、SteamVR の `proxmicmute` が ALSA の `VA_DEC0 Volume` / `VA_DEC1 Volume` を 0 にする。机に置いたまま測るとデジタルの無音が録れるので、被って（近接センサーが反応した状態で）測る。このアプリ自身は amixer を動かさない
+
 ## 声のチェック
 
 イヤホンとスピーカーで、アプリに届く声がどう違うかをその場で聞き比べる。
@@ -303,6 +345,8 @@ ssh steamos@<headset-ip> 'cd ~/frame-mic-tuner && cmake -G Ninja -S . -B build &
 ./build/frame-mic-tuner --set-ns on              # ノイズ除去を入れてから表示
 ./build/frame-mic-tuner --set-autostart on       # systemctl --user enable してから表示（off で disable）
 ./build/frame-mic-tuner --set-ns-vad 10 --set-ns-grace 800   # ノイズ除去の強さをその場でかけてから表示（保存はしない）
+./build/frame-mic-tuner --set-steady on          # 一定の雑音を消すを入れてから表示（先にノイズ除去を切る。off で切る）
+./build/frame-mic-tuner --set-steady-db 25       # 一定の雑音を消す強さ（0〜40 dB）をその場でかけてから表示（保存はしない）
 ./build/frame-mic-tuner --dump-png out/panel-ja_2026-09-27_00-00-00.png --language ja
 ./build/frame-mic-tuner --dump-png out/panel-en-error_2026-09-27_00-00-00.png --language en --fake-error write --fake-autostart missing
 # README のスクリーンショット（docs/v12-*.png。1400×788。ja・en それぞれ「かんたん」と「細かく調整」の 4 枚）。ダミーの値で、アプリと更新の点を消すため --fake-aux running
@@ -319,12 +363,13 @@ ctest --test-dir build --output-on-failure       # --self-test と rgba-test（�
 ```
 
 - `--print` は `pw-link -l` のうちマイクの通り道の行も出す（表示とリンクが合っているかを見比べる用）。音の出口とマイクは、キー・既定にするノード（id）・今の既定（`*`）と、設定ファイルの出口ごとの設定を出す（読むだけ。移し替えもかけることもしない）
-- `--dump-png` は今の実際の値で描く（設定ファイルは読むだけ）。`--fake` か `--fake-*` を付けると実際の値を読まずにダミーで描く（`--fake-echo on|off`・`--fake-ns on|off`・`--fake-idle`・`--fake-loading`・`--fake-autostart on|off|missing|unknown`・`--fake-error read|not-installed|links|write|write-echo|write-ns|write-mute|write-mute-on|write-output|write-input|autostart`）。`--preview-quit` で「もう一度押すと終了」の状態、`--language ja|en|sc` で言語、`--tab quick|fine` でタブを指定
+- `--dump-png` は今の実際の値で描く（設定ファイルは読むだけ）。`--fake` か `--fake-*` を付けると実際の値を読まずにダミーで描く（`--fake-echo on|off`・`--fake-ns on|off`・`--fake-idle`・`--fake-loading`・`--fake-autostart on|off|missing|unknown`・`--fake-error read|not-installed|links|write|write-echo|write-ns|write-steady|write-steady-db|write-mute|write-mute-on|write-output|write-input|autostart`）。`--preview-quit` で「もう一度押すと終了」の状態、`--language ja|en|sc` で言語、`--tab quick|fine` でタブを指定
 - 画面と重ねた画面: `--view settings|apps`・`--overlay output|mic|apps|confirm|list-confirm`（音の出口を選ぶ・使うマイク・ささけん＠の Frame アプリ・入れる前の確認・一覧から開いた確認）・`--preview-scroll PX|end`（重ねた画面の一覧のスクロール）
 - 音の出口のダミー（`--fake` のとき。つながっている出口は Frame のスピーカー・AB13X USB Audio・WH-1000XM4、マイクは内蔵・AB13X）: `--fake-output speaker|earphones`（今の出口。earphones = AB13X。`--fake-echo` を付けなければ、その出口のプリセットに合わせる）・`--fake-past-outputs N`（前に使った出口の数。既定 3 で、一覧がスクロールする）・`--fake-switched`（自動で切り替えた知らせ）・`--fake-external-mic`（外付けのマイクを使っている）・`--fake-viewing ab13x|past`（今の出口でない出口の設定を表示）
 - ほかのアプリのダミー（同梱の一覧。eye と perf は動作中、keyboard は入っている）: `--fake-aux missing|installed|running`・`--fake-apps-busy KEYS`（Konsole を開いている呼び名。menu はメニュー）・`--fake-apps-extra N`（一覧にダミーのアプリを足す）・`--fake-confirm KEY|menu`・`--fake-launch busy|nodisplay|nokonsole|failed`（Konsole を開けなかった表示）
 - 声のチェックの見た目: `--fake-recording`（録音中）・`--fake-history N`（ダミーの履歴 N 件）・`--fake-playing I`（I 件目を再生中）・`--fake-voice-error record|play`・`--preview-pressed earphone|speaker|record|mute|apps`（押している間。1 回描いてボタンの位置を知り、そこにポインターを置いて描き直す）
 - ノイズ除去の強さの見た目: `--fake-ns-vad N`・`--fake-ns-grace N`（ダミーの値）・`--preview-drag-vad N`・`--preview-drag-grace N`（そのバーを N までドラッグしている）
+- 一定の雑音を消すの見た目: `--fake-steady on|off`（on なら `--fake-ns` より優先）・`--fake-steady-db N`・`--preview-drag-steady N`・`--fake-steady-missing`（設定がまだ無い = 再起動前。灰色と「Frame を再起動すると使えます」）・`--fake-denoise-stopped`（ノードが無い = サービスが止まっている）
 - ミュートの見た目: `--fake-muted`（見出しが赤い「ミュート中」とミュートを解除）・`--fake-error write-mute`（解除に失敗した）・`--fake-error write-mute-on`（ミュートに失敗した）
 - 更新の見た目（アプリと更新の画面）: `--fake-update unknown|uptodate|checking|available|manual|installing|installed|checkfailed|installfailed`・`--preview-update-confirm`
 - テスト用の環境変数（ほかのアプリの一覧の取得先。`vendor/frame-apps/cpp/frame_apps.cpp`）: `FRAME_APPS_URL`（取得先のサイト。既定は frame.sasaken1102s.net。`FRAME_APPS_ALLOW_INSECURE=1` のときだけ変えられる）・`FRAME_APPS_ALLOW_INSECURE=1`（http:// と ほかのホストを許す。本番では使わない）
@@ -381,28 +426,28 @@ systemd から起動されたのに、すでに常駐がいるとき（手で起
   "ns_vad_threshold_percent": 23,
   "ns_vad_grace_ms": 500,
   "outputs": {
-    "alsa_output.platform-sound.HiFi__Speaker__sink": {"name": "Built-in Audio", "kind": "speaker", "echo": true, "ns": false, "ns_vad_threshold_percent": 23, "ns_vad_grace_ms": 500, "last_used": "2026-10-10"}
+    "alsa_output.platform-sound.HiFi__Speaker__sink": {"name": "Built-in Audio", "kind": "speaker", "echo": true, "ns": false, "ns_vad_threshold_percent": 23, "ns_vad_grace_ms": 500, "steady_noise": false, "steady_noise_db": 20, "last_used": "2026-10-10", "keep_awake": false}
   }
 }
 ```
 
 | キー | 既定値 | 説明 |
 |---|---|---|
-| `outputs` | （無し） | 音の出口ごとの設定（上の「音の出口ごとの設定」）。キーは出口のキー、値は `name`（表示名）・`kind`（`"speaker"` / `"earphones"`）・`echo`・`ns`（true / false）・`ns_vad_threshold_percent`（0〜99）・`ns_vad_grace_ms`（0〜1000）・`last_used`（YYYY-MM-DD）・`keep_awake`（true / false。音の頭切れを防ぐ）。無い項目は初めての出口の値（`keep_awake` は AB13X の USB の出口だけ true）。**`outputs` が無いファイル（前の版）は、次の起動で今の設定を今の出口へ移して書く**。出口を全部忘れても `"outputs": {}` は残る |
+| `outputs` | （無し） | 音の出口ごとの設定（上の「音の出口ごとの設定」）。キーは出口のキー、値は `name`（表示名）・`kind`（`"speaker"` / `"earphones"`）・`echo`・`ns`（true / false）・`ns_vad_threshold_percent`（0〜99）・`ns_vad_grace_ms`（0〜1000）・`steady_noise`（true / false。一定の雑音を消す。`ns` と両方 true なら、かけるときに一定の雑音を消すにして `ns` をオフにする）・`steady_noise_db`（0〜40）・`last_used`（YYYY-MM-DD）・`keep_awake`（true / false。音の頭切れを防ぐ）。無い項目は初めての出口の値（`keep_awake` は AB13X の USB の出口だけ true）。**`outputs` が無いファイル（前の版）は、次の起動で今の設定を今の出口へ移して書く**。出口を全部忘れても `"outputs": {}` は残る |
 | `update_check` | `true` | 新しい版の自動確認（起動時と 1 日 1 回）と、ほかのアプリの一覧の取得。アプリと更新の画面の「新しい版の確認」で切り替えると書かれる。オフでも「今すぐ確かめる」は押せる |
 | `language` | Steam の言語 | 画面の文言の言語。無いときは Steam の言語設定（`~/.steam/registry.vdf` の `language`、読むだけ）が `japanese` なら日本語、`schinese`・`chinese` なら簡体字中国語、それ以外（`tchinese` を含む）は英語（Steam の値が読めなければ `LC_ALL`・`LC_MESSAGES`・`LANG` の `ja` / `zh_CN` も見る）。`"ja"`（日本語）、`"en"`（English）、`"sc"`（简体中文）。パネルの言語ボタンで変えると保存される（一時ファイルに書いてから置き換える） |
 | `tab` | `"quick"` | 最後に見ていたタブ。`"quick"`（かんたん）か `"fine"`（細かく調整）。タブを切り替えたときに書かれ、パネルを開いたときにこのタブを出す |
 | `ns_vad_threshold_percent` | （無し） | 前の版のノイズ除去の判定の厳しさ（0〜99。出口ごとに覚える前の 1 つだけの値）。前の版から初めて起動したときに今の出口へ移す。そのあとは今の出口の強さを写しておく（前の版に戻したとき用）。起動時、出口ごとの設定が分かるまではこの値をかけたい値にする。`ns_vad_grace_ms` と 2 つそろっているときだけ使う |
 | `ns_vad_grace_ms` | （無し） | 前の版のノイズ除去の余韻（0〜1000ms）。同上 |
 
-- 今かかっているマイクの設定（エコー除去・ノイズ除去）は WirePlumber が `~/.local/state/wireplumber/sm-settings` に保存する（`--save`）。再起動しても最後にかけた状態のまま。`outputs` は出口ごとに覚えておく分で、出口が変わるとそれをかける
+- 今かかっているマイクの設定（エコー除去・ノイズ除去・一定の雑音を消す）は WirePlumber が `~/.local/state/wireplumber/sm-settings` に保存する（`--save`）。再起動しても最後にかけた状態のまま。`outputs` は出口ごとに覚えておく分で、出口が変わるとそれをかける
 - 別の設定ファイルを使うときは `--config パス`
 - 文言は `src/i18n.cpp` の表にまとめてある（日本語・英語・簡体字中国語）。ログや `--print` の出力は日本語のまま
 
 ## 守っていること
 
-- **PipeWire・WirePlumber を再起動しない**（再起動すると SteamVR・Steam Link・ゲームの音が戻らなくなる）。切り替えは `wpctl settings --save` だけ。既定の出口・マイクとミュートは、ユーザーが押したときだけ `wpctl set-default` / `wpctl set-mute` で変える
-- ALSA のミキサー（amixer）を書き換えない（`VA DMIC MUX` を変えるとマイクの音量が 0 に落ちる罠がある）。`/etc`・Valve のスクリプトを書き換えない。sudo を使わない
+- **PipeWire・WirePlumber を再起動しない**（再起動すると SteamVR・Steam Link・ゲームの音が戻らなくなる）。切り替えは `wpctl settings --save` だけ。install.sh が起動・再起動するのは、一定の雑音を消す自分のプロセス（`frame-mic-tuner-denoise.service`。PipeWire のクライアント）だけ。既定の出口・マイクとミュートは、ユーザーが押したときだけ `wpctl set-default` / `wpctl set-mute` で変える
+- ALSA のミキサー（amixer）を書き換えない（`VA DMIC MUX` を変えるとマイクの音量が 0 に落ちる罠がある）。アプリ自身は amixer を動かさない（`VA_DEC0/1 Volume` が 0 になるのは SteamVR の `proxmicmute`。上の「一定の雑音を消す」）。`/etc`・Valve のスクリプトを書き換えない。sudo を使わない
 - カメラ（`/dev/video*`）・GPIO・sysfs・`/persist` に触らない
 - 外部コマンド（`wpctl`・`pw-link`・`systemctl`）は fork＋execvp で、シェルを通さず固定の引数だけで呼ぶ。標準出力と標準エラーはパイプで読み、2 秒（`systemctl enable/disable` は 5 秒）で終わらなければ SIGKILL、どの場合も `waitpid` で片付ける（ゾンビを残さない）。子プロセスではシグナルのマスクを空に戻してから exec する
 - 外部コマンドはワーカースレッドで実行する（ポインターへの応答 33ms おきを止めない）。メインスレッドは mutex で状態の写しを読むだけ。SIGTERM・SIGINT・SIGUSR1 はワーカースレッドでは止めて、メインスレッドで受ける
@@ -415,7 +460,7 @@ systemd から起動されたのに、すでに常駐がいるとき（手で起
 | パネルを閉じている | 10 秒で 0〜1 tick（10ms 程度） | なし（今の版は 2 秒おきの pw-metadata が増える。1 回 約 10ms） |
 | パネルが開いている | 10 秒で約 100ms（1%） | 10 秒で約 190ms（1.9%）（今の版は 5 秒おきの pw-dump が増える。1 回 約 90ms） |
 
-- 開いている間の読み直しは、`wpctl settings`（一覧 1 回で 2 つの設定を読む。キーごとに呼んでも 1 回の重さは同じなので、まとめて半分にした）・`pw-link -l`・`wpctl get-volume`・`pw-dump ns_capture` を 1 秒ごと、`systemctl --user is-enabled` と `pw-dump`（出口とマイクの一覧）を 5 秒ごと、`pw-metadata -n default` を 2 秒ごと
+- 開いている間の読み直しは、`wpctl settings`（一覧 1 回で 3 つの設定を読む。キーごとに呼んでも 1 回の重さは同じなので、まとめた）・`pw-link -l`・`wpctl get-volume`・`pw-dump ns_capture`・`pw-dump frame_mic_denoise_capture` を 1 秒ごと、`systemctl --user is-enabled` と `pw-dump`（出口とマイクの一覧）を 5 秒ごと、`pw-metadata -n default` を 2 秒ごと
 - 読み直した結果が前と同じなら描き直さない
 - 録音中・再生中だけ、メーターと再生位置を動かすため 1 秒に 15 回描き直す
 
@@ -460,7 +505,7 @@ systemd から起動されたのに、すでに常駐がいるとき（手で起
 | ファイル | 役割 |
 |---|---|
 | `src/main.cpp` | コマンドライン、常駐のループ、二重起動（flock・SIGUSR1・サービスからの重複）、確認用オプション |
-| `src/mic_state.*` | `wpctl`・`pw-link`・`systemctl` の出力を読む・書く（パーサ）。ミュートの読み書き |
+| `src/mic_state.*` | `wpctl`・`pw-link`・`systemctl` の出力を読む・書く（パーサ）。ミュートの読み書き。ノイズ除去と一定の雑音を消すの強さ（`pw-dump`・`pw-cli set-param`） |
 | `src/outputs.*` | 音の出口とマイクの一覧（`pw-dump`・`pw-metadata -n default` のパーサ）、出口のキー、既定の切り替え（`wpctl set-default`）、出口ごとの設定の形 |
 | `src/output_sync.*` | 起動したとき・出口が変わったときに出口の設定をかける・外からの変化を覚える・前の版からの移し替え（判断だけ。書き込みはワーカーに頼む） |
 | `src/self_test.h`・`src/self_test_outputs.cpp` | `--self-test` の音の出口の分（Frame で取った `pw-dump`・`pw-metadata` の出力で試す） |
@@ -474,8 +519,10 @@ systemd から起動されたのに、すでに常駐がいるとき（手で起
 | `src/vk_texture.*`・`src/draw.*`・`src/json.*` | Vulkan の画像、描画の部品、JSON（同じ作者の別のオーバーレイと共通） |
 | `src/i18n.*`・`src/config.*` | 文言の表（日本語・英語・簡体字中国語）、設定ファイル（言語・タブ・新しい版の確認・出口ごとの設定） |
 | `tests/rgba_test.cpp` | `ctest` の画素の変換のテストと `--benchmark`（リリースの tar.gz には入れない） |
+| `src/denoise/spectral_denoiser.*`・`src/denoise/ladspa_denoise.cpp` | 一定の雑音を消す（周波数ごとに雑音を引く処理と、LADSPA の入口。`frame-mic-denoise.so` になる） |
+| `tests/denoise_test.cpp`・`tests/denoise_wav.cpp` | `ctest` の `denoise` と、wav を通して試し聞き・測定する道具（どちらもリリースには入れない） |
 | `vendor/frame-updater/` | 新しい版の確認と更新（共通のリポジトリからのコピー。直さない） |
 | `vendor/frame-ui/` | 共通の UI 部品（色・寸法・切り替え・ボタン・カード・一番下の行・frame-ui の文言の表）。`sh ../frame-ui/sync.sh .` で写す。直さない |
 | `vendor/frame-apps/` | ささけん＠のほかの Frame アプリの一覧と、インストーラーを Konsole で開く部品（アイコンを含む）。`sh ../frame-apps/sync.sh .` で写す。直さない |
-| `contrib/` | `.desktop`・`.service`・アイコン・設定の例・`wireplumber/`（切り替えの仕組み） |
+| `contrib/` | `.desktop`・`.service`・アイコン・設定の例・`wireplumber/`（切り替えの仕組み）・`denoise/`（一定の雑音を消すの PipeWire の設定とサービス） |
 | `install.sh` | ビルドとインストール・アンインストール |

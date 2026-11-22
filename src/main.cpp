@@ -97,6 +97,16 @@ struct Options {
     double nsVad = 0.0;
     bool setNsGrace = false;
     double nsGrace = 0.0;
+    // 一定の雑音を消す（--set-steady / --set-steady-db。強さはその場でかけるだけで、設定ファイルには保存しない）
+    bool setSteady = false;
+    bool steady = false;
+    bool setSteadyDb = false;
+    double steadyDb = 0.0;
+    // 一定の雑音を消すのダミー（--dump-png 用）
+    bool fakeSteady = false;
+    double fakeSteadyDb = kSteadyDbDefault;
+    bool fakeSteadyMissing = false;   ///< 設定がまだ無い（入れたあと Frame を再起動していない）
+    bool fakeDenoiseStopped = false;  ///< ノードが無い（frame-mic-tuner-denoise.service が動いていない）
     // ノイズ除去の強さのダミーと、バーをドラッグしている見た目（--dump-png 用）
     double fakeNsVad = kNsVadDefault;
     double fakeNsGrace = kNsGraceDefault;
@@ -190,6 +200,9 @@ void printUsage() {
         "  --set-autostart on|off  SteamVR と一緒に起動（systemctl --user enable/disable）を切り替えてから表示する\n"
         "  --set-ns-vad N        ノイズ除去の判定の厳しさ（0〜99%%）をその場でかけてから表示する（保存はしない）\n"
         "  --set-ns-grace N      ノイズ除去の余韻（0〜1000ms）をその場でかけてから表示する（保存はしない）\n"
+        "  --set-steady on|off   一定の雑音を消す（frame-mic.steady-noise）を切り替えてから表示する\n"
+        "                        （on のときは先にノイズ除去をオフにし、--set-ns on のときは先にこちらをオフにする）\n"
+        "  --set-steady-db N     一定の雑音を消す強さ（0〜40 dB）をその場でかけてから表示する（保存はしない）\n"
         "  --dump-png PATH       OpenVR なしでパネルの画像を PNG に書き出して終わる（今の値で描く）\n"
         "  --thumbnail-png PATH  ダッシュボードのサムネイル（＋のアイコンと同じ絵）を PNG に書き出す\n"
         "      --thumbnail-size N  そのサムネイルの一辺（既定 256）\n"
@@ -202,8 +215,8 @@ void printUsage() {
         "      --fake-loading    まだ読んでいない状態\n"
         "      --fake-muted      既定のマイクがミュートされている（ミュート中のバッジと帯）\n"
         "      --fake-autostart on|off|missing|unknown  自動起動の状態（missing = ユニットファイルが無い）\n"
-        "      --fake-error read|not-installed|links|write|write-echo|write-ns|write-mute|write-mute-on|\n"
-        "                   write-output|write-input|autostart  赤い失敗の表示（write-mute は解除の失敗）\n"
+        "      --fake-error read|not-installed|links|write|write-echo|write-ns|write-steady|write-steady-db|\n"
+        "                   write-mute|write-mute-on|write-output|write-input|autostart  赤い失敗の表示（write-mute は解除の失敗）\n"
         "      --fake-recording  録音中（メーター・経過）の見た目\n"
         "      --fake-history N  ダミーの履歴を N 件（0〜5）\n"
         "      --fake-playing I  履歴の I 件目（0 が最新）を再生中にする\n"
@@ -215,6 +228,11 @@ void printUsage() {
         "      --preview-language-menu  言語の一覧を開いた見た目\n"
         "      --fake-ns-vad N / --fake-ns-grace N  ダミーのノイズ除去の強さ（既定 23 / 500）\n"
         "      --preview-drag-vad N / --preview-drag-grace N  そのバーを N までドラッグしている見た目\n"
+        "      --fake-steady on|off  ダミーの一定の雑音を消す（on なら --fake-ns より優先）\n"
+        "      --fake-steady-db N    ダミーの消す強さ（既定 20）\n"
+        "      --fake-steady-missing  一定の雑音を消すの設定がまだ無い（入れたあと Frame を再起動していない）\n"
+        "      --fake-denoise-stopped  一定の雑音を消すのノードが無い（frame-mic-tuner-denoise.service が止まっている）\n"
+        "      --preview-drag-steady N  消す強さのバーを N までドラッグしている見た目\n"
         "      --fake-output speaker|earphones  今の音の出口（Frame のスピーカー / AB13X USB Audio）\n"
         "      --fake-past-outputs N  前に使った（いまはつながっていない）出口の数（既定 3。多いと一覧がスクロールする）\n"
         "      --fake-switched   出口をつないで自動で切り替えた知らせ（元に戻す）を出す\n"
@@ -313,6 +331,29 @@ bool parseOptions(int argc, char** argv, Options& options) {
             options.setNsGrace = true;
             options.nsGrace = clampNsGrace(std::atof(argv[++i]));
             options.mode = Options::Mode::Print;
+        } else if (arg == "--set-steady" && hasNext) {
+            if (!parseOnOff(argv[++i], options.steady)) return false;
+            options.setSteady = true;
+            options.mode = Options::Mode::Print;
+        } else if (arg == "--set-steady-db" && hasNext) {
+            options.setSteadyDb = true;
+            options.steadyDb = clampSteadyDb(std::atof(argv[++i]));
+            options.mode = Options::Mode::Print;
+        } else if (arg == "--fake-steady" && hasNext) {
+            if (!parseOnOff(argv[++i], options.fakeSteady)) return false;
+            options.fake = true;
+        } else if (arg == "--fake-steady-db" && hasNext) {
+            options.fakeSteadyDb = clampSteadyDb(std::atof(argv[++i]));
+            options.fake = true;
+        } else if (arg == "--fake-steady-missing") {
+            options.fakeSteadyMissing = true;
+            options.fake = true;
+        } else if (arg == "--fake-denoise-stopped") {
+            options.fakeDenoiseStopped = true;
+            options.fake = true;
+        } else if (arg == "--preview-drag-steady" && hasNext) {
+            options.previewDrag = PanelAction::SteadySlider;
+            options.previewDragValue = std::atof(argv[++i]);
         } else if (arg == "--fake-ns-vad" && hasNext) {
             options.fakeNsVad = clampNsVad(std::atof(argv[++i]));
             options.fake = true;
@@ -428,6 +469,10 @@ bool parseOptions(int argc, char** argv, Options& options) {
                 options.fakeError = MicError::WriteEcho;
             } else if (kind == "write-ns") {
                 options.fakeError = MicError::WriteNs;
+            } else if (kind == "write-steady") {
+                options.fakeError = MicError::WriteSteady;
+            } else if (kind == "write-steady-db") {
+                options.fakeError = MicError::WriteSteadyDb;
             } else if (kind == "write-mute") {
                 options.fakeError = MicError::WriteMute;
             } else if (kind == "write-mute-on") {
@@ -440,7 +485,8 @@ bool parseOptions(int argc, char** argv, Options& options) {
                 options.fakeError = MicError::WriteAutostart;
             } else {
                 std::fprintf(stderr,
-                             "--fake-error は read / not-installed / links / write / write-echo / write-ns / write-mute / "
+                             "--fake-error は read / not-installed / links / write / write-echo / write-ns / write-steady / "
+                             "write-steady-db / write-mute / "
                              "write-mute-on / write-output / write-input / autostart です: %s\n",
                              kind.c_str());
                 return false;
@@ -539,6 +585,33 @@ std::string describeNsParams(const NsParams& ns) {
 }
 
 /**
+ * 一定の雑音を消す強さを短い日本語にする（ログ・--print 用）。
+ * @param p 値
+ * @return 例:「消す強さ 20 dB（frame_mic_denoise_capture の id 88）」
+ */
+std::string describeSteadyParams(const SteadyParams& p) {
+    if (!p.nodeKnown) return std::string(kSteadyNodeName) + " が見つかりません（" + kDenoiseServiceName + " が動いていない）";
+    char text[160];
+    std::snprintf(text, sizeof(text), "消す強さ %s（%s の id %d）",
+                  p.dbKnown ? (std::to_string(static_cast<int>(std::lround(p.db))) + " dB").c_str() : "?", kSteadyNodeName,
+                  p.nodeId);
+    return text;
+}
+
+/**
+ * 一定の雑音を消すの設定の値を日本語にする（ログ・--print 用）。
+ * @param state 状態
+ * @param onWord オンのときの言葉
+ * @param offWord オフのときの言葉
+ * @return 文言（設定が無いときは、Frame の再起動が要る旨）
+ */
+std::string steadyValueText(const MicState& state, const char* onWord, const char* offWord) {
+    if (state.steadyKnown) return state.steady ? onWord : offWord;
+    if (state.steadyMissing) return "設定がありません（入れたあと Frame を再起動すると使えます）";
+    return "読めません";
+}
+
+/**
  * 表示する状態が変わったときに、ログへ 1 行出す（外から変えられたときの追従をあとで確かめるため）。
  * @param state 状態
  */
@@ -547,8 +620,9 @@ void logState(const MicState& state) {
     const UiText& text = uiText(Language::Ja);
     const MicError error = state.writeError != MicError::None ? state.writeError : state.readError;
     const NsParams& ns = state.nsParams;
-    std::fprintf(stderr, "[マイク] 表示を更新: エコー除去 %s・ノイズ除去 %s（%s）・%s・%s・%s・自動起動 %s%s%s\n",
+    std::fprintf(stderr, "[マイク] 表示を更新: エコー除去 %s・ノイズ除去 %s（%s）・一定の雑音を消す %s（%s）・%s・%s・%s・自動起動 %s%s%s\n",
                  onOff(state.echoKnown, state.echo), onOff(state.nsKnown, state.ns), describeNsParams(ns).c_str(),
+                 steadyValueText(state, "オン", "オフ").c_str(), describeSteadyParams(state.steadyParams).c_str(),
                  !state.linksKnown ? "使用中か不明" : (state.inUse ? "使用中" : "未使用"),
                  !state.muteKnown ? "ミュート不明" : (state.muted ? "ミュート中" : "ミュートなし"),
                  describeChain(state).c_str(), autostartName(state.autostart), error != MicError::None ? "・失敗: " : "",
@@ -558,12 +632,15 @@ void logState(const MicState& state) {
 /**
  * 出口ごとの設定を短い日本語にする（--print 用）。
  * @param p 設定
- * @return 例:「エコー除去オン・ノイズ除去オフ・23%/500ms・頭切れ防止オフ（スピーカー、最後に使った日 2026-10-10）」
+ * @return 例:「エコー除去オン・ノイズ除去オフ・23%/500ms・一定の雑音を消すオフ・20dB・頭切れ防止オフ（スピーカー、最後に使った日 2026-10-10）」
  */
 std::string describeProfile(const OutputProfile& p) {
-    char text[240];
-    std::snprintf(text, sizeof(text), "エコー除去%s・ノイズ除去%s・%.0f%%/%.0fms・頭切れ防止%s（%s、最後に使った日 %s）",
-                  p.echo ? "オン" : "オフ", p.ns ? "オン" : "オフ", p.nsVad, p.nsGrace, p.keepAwake ? "オン" : "オフ",
+    char text[320];
+    const NoiseMode mode = p.noiseMode();
+    std::snprintf(text, sizeof(text),
+                  "エコー除去%s・ノイズ除去%s・%.0f%%/%.0fms・一定の雑音を消す%s・%.0fdB・頭切れ防止%s（%s、最後に使った日 %s）",
+                  p.echo ? "オン" : "オフ", mode == NoiseMode::Valve ? "オン" : "オフ", p.nsVad, p.nsGrace,
+                  mode == NoiseMode::Steady ? "オン" : "オフ", p.steadyDb, p.keepAwake ? "オン" : "オフ",
                   p.kind == OutputKind::Speaker ? "スピーカー" : "イヤホン", p.lastUsed.empty() ? "不明" : p.lastUsed.c_str());
     return text;
 }
@@ -622,10 +699,17 @@ void printState(const MicState& state) {
     std::printf("エコー除去 (%s): %s\n", kEchoCancelKey, onOff(state.echoKnown, state.echo));
     std::printf("ノイズ除去 (%s): %s\n", kNoiseSuppressionKey, onOff(state.nsKnown, state.ns));
     std::printf("ノイズ除去の強さ: %s\n", describeNsParams(state.nsParams).c_str());
+    std::printf("一定の雑音を消す (%s): %s\n", kSteadyNoiseKey, steadyValueText(state, "オン（true）", "オフ（false）").c_str());
+    std::printf("一定の雑音を消す強さ: %s\n", describeSteadyParams(state.steadyParams).c_str());
+    if (state.nsKnown && state.ns && state.steadyKnown && state.steady) {
+        std::printf("ノイズ除去と一定の雑音を消すが両方オンです（パネルは一定の雑音を消すとして扱い、次にかけるときノイズ除去をオフにします）\n");
+    }
     if (state.echoKnown && state.nsKnown) {
         // プリセット: イヤホン = エコー除去オフ・ノイズ除去オフ、スピーカー = エコー除去オン・ノイズ除去オフ
-        const char* preset = state.ns ? "細かく調整した設定（どちらのプリセットとも違う）"
-                                      : (state.echo ? "スピーカー" : "イヤホン");
+        // （ノイズ除去オフ = Valve のノイズ除去も、一定の雑音を消すも使わない）
+        const bool noise = state.ns || (state.steadyKnown && state.steady);
+        const char* preset = noise ? "細かく調整した設定（どちらのプリセットとも違う）"
+                                   : (state.echo ? "スピーカー" : "イヤホン");
         std::printf("プリセット: %s\n", preset);
     }
     std::printf("マイク: %s\n", !state.linksKnown ? "読めません" : (state.inUse ? "使用中" : "未使用"));
@@ -655,10 +739,22 @@ int runPrint(const Options& options) {
         bool ok = false;
         switch (command.kind) {
             case MicCommand::Kind::SetEcho: ok = writeSetting(kEchoCancelKey, command.value); break;
-            case MicCommand::Kind::SetNs: ok = writeSetting(kNoiseSuppressionKey, command.value); break;
+            case MicCommand::Kind::SetNs: {
+                // ノイズ除去と一定の雑音を消すは、どちらか 1 つ。オンにするときは、一定の雑音を消すが今オンなら先にオフにする
+                if (command.value) {
+                    MicState now;
+                    const CommandResult list = runCommand({"wpctl", "settings"});
+                    if (list.ok()) parseSettingsList(list.out, now);
+                    if (now.steadyKnown && now.steady && !writeSetting(kSteadyNoiseKey, false)) break;
+                }
+                ok = writeSetting(kNoiseSuppressionKey, command.value);
+                break;
+            }
             case MicCommand::Kind::SetAutostart: ok = writeAutostart(command.value); break;
             case MicCommand::Kind::SetNsParams: break;  // 下でまとめて扱う
             // --print からは使わない（常駐のパネルだけが使う）
+            case MicCommand::Kind::SetNoiseMode:
+            case MicCommand::Kind::SetSteadyDb:
             case MicCommand::Kind::ApplySettings:
             case MicCommand::Kind::SetMute:
             case MicCommand::Kind::SetDefaultOutput:
@@ -675,6 +771,27 @@ int runPrint(const Options& options) {
         const double vad = options.setNsVad ? options.nsVad : (now.vadKnown ? now.vad : kNsVadDefault);
         const double grace = options.setNsGrace ? options.nsGrace : (now.graceKnown ? now.grace : kNsGraceDefault);
         if (!now.nodeKnown || !writeNsParams(now.nodeId, vad, grace)) writeError = MicError::WriteNsParams;
+    }
+    if (options.setSteady) {
+        // オンにするときは先にノイズ除去をオフにする（2 つが同時にオンにならないように）
+        bool ok = !options.steady || writeSetting(kNoiseSuppressionKey, false);
+        ok = ok && writeSetting(kSteadyNoiseKey, options.steady);
+        if (!ok) {
+            writeError = MicError::WriteSteady;
+            std::fprintf(stderr, "[一定の雑音] 切り替えられませんでした（設定 %s が無いときは、Frame の再起動が要ります）\n",
+                         kSteadyNoiseKey);
+        }
+    }
+    if (options.setSteadyDb) {
+        // その場でかけるだけで、設定ファイルには保存しない
+        const SteadyParams now = readSteadyParams();
+        if (!now.nodeKnown || !writeSteadyParams(now.nodeId, options.steadyDb)) {
+            writeError = MicError::WriteSteadyDb;
+            if (!now.nodeKnown) {
+                std::fprintf(stderr, "[一定の雑音] %s が見つかりません（%s が動いていない）\n", kSteadyNodeName,
+                             kDenoiseServiceName);
+            }
+        }
     }
     MicState state = readMicState();
     state.devices = readAudioDevices();
@@ -770,7 +887,10 @@ MicState fakeState(const Options& options) {
     // --fake-echo を付けなければ、今の出口のプリセット（スピーカー = オン、イヤホン = オフ）に合わせる
     state.echo = options.fakeEchoGiven ? options.fakeEcho : !earphones;
     state.nsKnown = true;
-    state.ns = options.fakeNs;
+    state.ns = options.fakeNs && !options.fakeSteady;  // パネルと同じく、2 つはどちらか 1 つ
+    state.steadyMissing = options.fakeSteadyMissing;
+    state.steadyKnown = !options.fakeSteadyMissing;
+    state.steady = state.steadyKnown && options.fakeSteady;
     state.devices = fakeDevices(earphones, options.fakeExternalMic);
     state.linksKnown = true;
     state.inUse = !options.fakeIdle;
@@ -781,6 +901,9 @@ MicState fakeState(const Options& options) {
         state.chain.push_back({ChainStage::Kind::Eq, "eq"});
         if (state.echo) state.chain.push_back({ChainStage::Kind::EchoCancel, "echo_cancel"});
         if (state.ns) state.chain.push_back({ChainStage::Kind::NoiseSuppression, "ns"});
+        if (state.steady && !options.fakeDenoiseStopped) {
+            state.chain.push_back({ChainStage::Kind::SteadyNoise, kSteadyStagePrefix});
+        }
     }
     state.autostart = options.fakeAutostart;
     state.nsParams.nodeKnown = true;
@@ -789,16 +912,25 @@ MicState fakeState(const Options& options) {
     state.nsParams.vad = options.fakeNsVad;
     state.nsParams.graceKnown = true;
     state.nsParams.grace = options.fakeNsGrace;
+    if (state.steadyKnown && !options.fakeDenoiseStopped) {
+        state.steadyParams.nodeKnown = true;
+        state.steadyParams.nodeId = 88;
+        state.steadyParams.dbKnown = true;
+        state.steadyParams.db = options.fakeSteadyDb;
+    }
     const MicError error = options.fakeError;
     if (error == MicError::WriteSettings || error == MicError::WriteAutostart || error == MicError::WriteEcho ||
-        error == MicError::WriteNs || error == MicError::WriteMute || error == MicError::WriteMuteOn ||
-        error == MicError::WriteOutput || error == MicError::WriteInput) {
+        error == MicError::WriteNs || error == MicError::WriteSteady || error == MicError::WriteSteadyDb ||
+        error == MicError::WriteMute || error == MicError::WriteMuteOn || error == MicError::WriteOutput ||
+        error == MicError::WriteInput) {
         state.writeError = error;
     } else if (error != MicError::None) {
         state.readError = error;
         if (error == MicError::ReadSettings || error == MicError::NotInstalled) {
             state.echoKnown = false;
             state.nsKnown = false;
+            state.steadyKnown = false;
+            state.steadyMissing = false;
         }
         if (error == MicError::ReadLinks) {
             state.linksKnown = false;
@@ -842,6 +974,9 @@ VoiceView fakeVoiceView(const Options& options) {
         clip->nsParamsKnown = true;
         clip->nsVad = i == 3 ? 10.0 : kNsVadDefault;      // 4 件目は強さを変えて録った例
         clip->nsGrace = i == 3 ? 800.0 : kNsGraceDefault;
+        clip->steadyKnown = clip->steadyDbKnown = true;
+        clip->steady = i == 1;                            // 2 件目は一定の雑音を消すで録った例
+        clip->steadyDb = kSteadyDbDefault;
         clip->samples.assign(static_cast<size_t>(lengths[i] * kVoiceRate), 0);
         clip->wave.resize(kWaveBins);
         for (int b = 0; b < kWaveBins; ++b) {
@@ -991,6 +1126,8 @@ int runDumpPng(const Options& options) {
                 active.ns = model.state.ns;
                 active.nsVad = model.state.nsParams.vad;
                 active.nsGrace = model.state.nsParams.grace;
+                active.steady = model.state.steady;
+                active.steadyDb = options.fakeSteadyDb;
                 model.activeOutputKey = model.state.devices.defaultOutputKey;
             }
         } else {
@@ -1160,9 +1297,22 @@ int runTestRecord(const Options& options) {
  * @return ドラッグしていたら true
  */
 bool finishDrag(MicPanel& panel, double& vad, double& grace) {
-    if (!panel.dragging()) return false;
+    if (!panel.dragging() || panel.dragAction() == PanelAction::SteadySlider) return false;
     panel.displayedNsValues(vad, grace);  // ドラッグ中のバーはその値、もう 1 本は表示していた値
     panel.endDrag();                      // ドラッグと押している見た目を終わらせる
+    return true;
+}
+
+/**
+ * 「消す強さ」のバーのドラッグを終わらせ、最後の値を返す（finishDrag と同じ。値を送って保存するのは呼び出し側）。
+ * @param panel パネル
+ * @param db 消す強さ（dB）の書き込み先
+ * @return 消す強さのバーをドラッグしていたら true
+ */
+bool finishSteadyDrag(MicPanel& panel, double& db) {
+    if (panel.dragAction() != PanelAction::SteadySlider) return false;
+    db = panel.displayedSteadyDb();
+    panel.endDrag();
     return true;
 }
 
@@ -1210,6 +1360,23 @@ int runSelfTest() {
     expect("wpctl: 一覧からエコー除去 = false・ノイズ除去 = true",
            parseSettingFromList(list, kEchoCancelKey, echo) && !echo &&
                parseSettingFromList(list, kNoiseSuppressionKey, ns) && ns);
+    {
+        // 一定の雑音を消す: 一覧にある（入れて Frame を再起動した）とき・無い（再起動前）とき・切り替えの仕組みが無いとき
+        MicState withSteady;
+        parseSettingsList(list + "\n- Id: frame-mic.steady-noise\n  Default: false\n  Value: true\t[Saved: true]\n", withSteady);
+        expect("wpctl: 一覧から一定の雑音を消す = true（設定がある）",
+               withSteady.steadyKnown && withSteady.steady && !withSteady.steadyMissing &&
+                   withSteady.readError == MicError::None && withSteady.nsKnown && withSteady.ns);
+        MicState oldConfig;
+        parseSettingsList(list, oldConfig);
+        expect("wpctl: 一定の雑音を消すだけが無い（Frame の再起動前）→ 失敗にせず「再起動が要る」印",
+               oldConfig.steadyMissing && !oldConfig.steadyKnown && !oldConfig.steady &&
+                   oldConfig.readError == MicError::None && oldConfig.echoKnown && oldConfig.nsKnown);
+        MicState none;
+        parseSettingsList("Settings:\n\n- Id: device.restore-profile\n  Value: true\t[Saved: true]\n", none);
+        expect("wpctl: エコー除去・ノイズ除去も無い → 切り替えの仕組みが入っていない（再起動の印は立てない）",
+               none.readError == MicError::NotInstalled && !none.steadyMissing && !none.steadyKnown);
+    }
 
     // systemctl --user is-enabled の出力
     expect("systemctl: not-found → ユニットファイルなし", parseAutostart("not-found\n") == Autostart::Missing);
@@ -1240,6 +1407,23 @@ int runSelfTest() {
     expect("pw-link: 外付けのマイクから録っている → フィルターなしでも使用中",
            external.linksKnown && external.inUse && external.chain.empty() && external.users.size() == 1);
 
+    // 一定の雑音を消すが入っているとき（frame-mic-tracker.lua はアプリ寄りの最後に置く）
+    const std::string steadyLinks =
+        "alsa_input.platform-sound.HiFi__Mic__source:capture_FL\n"
+        "  |-> eq_capture:input_FL\n"
+        "eq_source:capture_MONO\n"
+        "  |-> frame_mic_denoise_capture:input_MONO\n"
+        "frame_mic_denoise_source:capture_MONO\n"
+        "  |-> alsa_loopback_stream.alsa_input.platform-sound.HiFi__Mic__source:input_MONO\n";
+    MicState steadyChain;
+    parseLinks(steadyLinks, steadyChain);
+    expect("pw-link: マイク → EQ → 一定の雑音を消す → 出力（新しい段の種類）",
+           steadyChain.linksKnown && steadyChain.inUse && steadyChain.chain.size() == 2 &&
+               steadyChain.chain[0].kind == ChainStage::Kind::Eq &&
+               steadyChain.chain[1].kind == ChainStage::Kind::SteadyNoise &&
+               steadyChain.chain[1].name == "frame_mic_denoise" &&
+               describeChain(steadyChain) == "マイク → EQ → 一定の雑音を消す → 出力");
+
     // 誰も録っていないとき（マイクから出力へ直接）
     const std::string idleLinks =
         "alsa_input.platform-sound.HiFi__Mic__source:capture_FL\n"
@@ -1263,6 +1447,35 @@ int runSelfTest() {
                params.grace == 500.0);
     expect("ノイズ除去の強さ: 範囲外を丸める（150% → 99%、-5ms → 0ms、512ms → 510ms）",
            clampNsVad(150) == 99.0 && clampNsGrace(-5) == 0.0 && clampNsGrace(512) == 510.0);
+    {
+        // pw-dump frame_mic_denoise_capture の出力（ノードの id と消す強さ。contrib/denoise/frame-mic-denoise.conf の control）
+        const std::string steadyDump = R"json([{"id": 88, "type": "PipeWire:Interface:Node", "info": {
+            "props": {"node.name": "frame_mic_denoise_capture"},
+            "params": {"Props": [{"volume": 1.0},
+                {"params": ["denoise:Strength (dB)", 20.0]}]}}}])json";
+        const SteadyParams steadyParams = parseSteadyDump(steadyDump);
+        expect("pw-dump: frame_mic_denoise_capture の id 88・20 dB",
+               steadyParams.nodeKnown && steadyParams.nodeId == 88 && steadyParams.dbKnown && steadyParams.db == 20.0);
+        expect("pw-dump: サービスが動いていない（[]）・ns_capture だけ → 一定の雑音を消すのノードは無い",
+               !parseSteadyDump("[]\n").nodeKnown && !parseSteadyDump(dump).nodeKnown && !parseNsDump(steadyDump).nodeKnown);
+        expect("一定の雑音を消す強さ: 範囲外と端数を丸める（55 → 40、-3 → 0、12.4 → 12）",
+               clampSteadyDb(55) == 40.0 && clampSteadyDb(-3) == 0.0 && clampSteadyDb(12.4) == 12.0);
+        // 書いた値が読み返しに出ない（PipeWire 1.6、一度も動いていないフィルター）ときの扱いは、ノイズ除去と同じ
+        SteadyHiddenWrite hidden = noteSteadyWrite(steadyParams, 88, 30);
+        SteadyParams read = steadyParams;
+        showHiddenSteady(read, hidden, 30);
+        expect("一定の雑音を消す: 書いた直後の読み返しが前の値（20 dB）なら、書いた値（30 dB）を見せる",
+               hidden.nodeId == 88 && hidden.staleDb == 20.0 && read.db == 30.0);
+        expect("一定の雑音を消す: 隠れているノードには、読み返しと同じ強さでも書く・隠れていなければ同じなら書かない",
+               needSteadyWrite(steadyParams, 20, true, hidden) &&
+                   !needSteadyWrite(steadyParams, 20, true, SteadyHiddenWrite()) &&
+                   needSteadyWrite(steadyParams, 25, true, SteadyHiddenWrite()));
+        read = steadyParams;
+        read.nodeId = 89;
+        showHiddenSteady(read, hidden, 30);
+        expect("一定の雑音を消す: サービスが起動し直した（ノードの id が変わった）ら、印を消して読んだ値を出す",
+               hidden.nodeId < 0 && read.db == 20.0);
+    }
     {
         // PipeWire 1.6: 一度も動いていないフィルターに書くと、読み返しは前の値（23% / 500ms）のまま
         NsHiddenWrite hidden = noteNsWrite(params, 53, 5, 70);
@@ -1685,6 +1898,93 @@ int runSelfTest() {
         expect("知らせ: 自動で切り替えたあとは「元に戻す」を出す", panel.buttonCenter(PanelAction::UndoSwitch, x, y));
     }
 
+    // ノイズ除去の種類（細かく調整）: 3 つの切り替え・一定の雑音を消すのバー・使えないとき
+    {
+        MicPanel panel(fonts);
+        Config config;
+        config.tab = PanelTab::Fine;
+        PanelModel model = loadedModel(false);
+        model.state.steadyKnown = true;
+        model.state.steadyParams.nodeKnown = model.state.steadyParams.dbKnown = true;
+        model.state.steadyParams.nodeId = 88;
+        model.state.steadyParams.db = kSteadyDbDefault;
+        panel.render(config, model);
+        double x = 0.0;
+        double y = 0.0;
+        const bool threeShown = panel.buttonCenter(PanelAction::NsOff, x, y) && panel.buttonCenter(PanelAction::NsOn, x, y) &&
+                                panel.buttonCenter(PanelAction::SteadyOn, x, y);
+        expect("ノイズ除去の種類: オフのときは 3 つを押せて、Valve のバー 2 本（灰色）と標準に戻すを出す",
+               threeShown && panel.trackCenter(PanelAction::NsVadSlider, x, y) &&
+                   !panel.trackCenter(PanelAction::SteadySlider, x, y) && panel.buttonRect(PanelAction::NsReset).y == 514);
+        panel.buttonCenter(PanelAction::SteadyOn, x, y);
+        const PanelHit picked = panel.pointerDown(x, y, 0.0);
+        panel.pointerUp();
+        expect("ノイズ除去の種類: 「一定の雑音を消す」を押すと SteadyOn を返す", picked.action == PanelAction::SteadyOn);
+
+        // 一定の雑音を消すにした: 消す強さのバー 1 本と、標準に戻す（20 dB）
+        model.state.steady = true;
+        panel.render(config, model);
+        const frame_ui::Rect steadyOption = panel.buttonRect(PanelAction::SteadyOn);
+        const frame_ui::Rect valveOption = panel.buttonRect(PanelAction::NsOn);
+        const frame_ui::Rect reset = panel.buttonRect(PanelAction::SteadyReset);
+        double sx = 0.0;
+        double sy = 0.0;
+        const bool steadyBar = panel.trackCenter(PanelAction::SteadySlider, sx, sy);
+        expect("一定の雑音を消す: 消す強さのバーと標準に戻す（y 514）を出し、Valve のバーは出さない",
+               steadyBar && !panel.trackCenter(PanelAction::NsVadSlider, x, y) && reset.y == 514 &&
+                   !panel.buttonCenter(PanelAction::NsReset, x, y));
+        expect("一定の雑音を消す: 3 つの切り替えは横に並び、バーより上で、左のカードの中に収まる",
+               valveOption.right() <= steadyOption.x + 0.5 && steadyOption.bottom() <= sy - 24 &&
+                   steadyOption.right() <= 666.5 && panel.buttonRect(PanelAction::NsOff).x >= 50 - 0.5 &&
+                   reset.bottom() <= 568);
+        // バーをドラッグして離す: 消す強さだけが返り、ノイズ除去のバーとしては終わらない
+        panel.pointerDown(sx, sy, 1.0);  // 真ん中 → 20 dB 前後
+        panel.pointerMove(sx + 400, sy);  // 右端まで → 40 dB
+        double vad = 0.0;
+        double grace = 0.0;
+        double db = 0.0;
+        const bool notNs = !finishDrag(panel, vad, grace);
+        const bool finished = finishSteadyDrag(panel, db);
+        expect("一定の雑音を消す: バーを右端までドラッグすると 40 dB、終わらせるとドラッグしていない",
+               notNs && finished && db == kSteadyDbMax && !panel.dragging());
+        panel.holdSteadyDb(12, 1e9);
+        expect("一定の雑音を消す: 書いた直後は書いた値を出す", panel.displayedSteadyDb() == 12.0);
+
+        // 設定がまだ無い（Frame の再起動前）: 「一定の雑音を消す」は押せない（ほかの 2 つは押せる）
+        MicPanel fresh(fonts);
+        PanelModel old = loadedModel(false);
+        old.state.steadyMissing = true;
+        fresh.render(config, old);
+        expect("設定がまだ無い: 「一定の雑音を消す」は押せず、オフ・Valve のノイズ除去は押せる",
+               !fresh.buttonCenter(PanelAction::SteadyOn, x, y) && fresh.buttonCenter(PanelAction::NsOn, x, y) &&
+                   fresh.buttonCenter(PanelAction::NsOff, x, y));
+        // どの言語でも、細かく調整の部品が左のカードの中に収まり、つながりの枠（y 568）に届かない
+        bool fits = true;
+        for (const Language language : kLanguages) {
+            config.language = language;
+            panel.render(config, model);
+            const frame_ui::Rect r = panel.buttonRect(PanelAction::SteadyReset);
+            const frame_ui::Rect on = panel.buttonRect(PanelAction::SteadyOn);
+            fits = fits && r.w > 0 && r.x >= 50 && r.right() <= 666.5 && r.bottom() <= 568 && on.right() <= 666.5;
+        }
+        expect("一定の雑音を消す: どの言語でも標準に戻すと切り替えが左のカードの中に収まる", fits);
+        expect("ノイズ除去の種類: 2 つの設定から決める（両方オンなら一定の雑音を消す）",
+               noiseModeOf(true, true) == NoiseMode::Steady && noiseModeOf(true, false) == NoiseMode::Valve &&
+                   noiseModeOf(false, true) == NoiseMode::Steady && noiseModeOf(false, false) == NoiseMode::Off);
+        const MicCommand toSteady = MicCommand::noiseMode(NoiseMode::Steady);
+        const MicCommand toValve = MicCommand::noiseMode(NoiseMode::Valve);
+        const MicCommand toOff = MicCommand::noiseMode(NoiseMode::Off);
+        expect("ノイズ除去の種類: 切り替えの書き込みは 2 つが同時にオンにならない形（Steady = ns オフ、Valve = steady オフ）",
+               toSteady.kind == MicCommand::Kind::SetNoiseMode && !toSteady.ns && toSteady.steady && toValve.ns &&
+                   !toValve.steady && !toOff.ns && !toOff.steady);
+        MicState a = model.state;
+        MicState b = a;
+        b.steadyParams.db = 30;
+        MicState c = a;
+        c.steadyMissing = true;
+        expect("一定の雑音を消す: 強さ・再起動の印が変わると描き直す", !sameMicState(a, b) && !sameMicState(a, c) && sameMicState(a, a));
+    }
+
     // 音の出口: 一覧の読み取り（Frame で取った pw-dump・pw-metadata）・キー・出口ごとの設定のかけ方・設定ファイル
     outputSelfTests(expect);
 
@@ -1905,6 +2205,9 @@ int runOverlay(const Options& options) {
     double lastNsSendAt = -1.0;
     double sentVad = -1.0;
     double sentGrace = -1.0;
+    // 一定の雑音を消す強さも同じ（100ms おきに最後の値だけ、離したときに必ず 1 回送って保存する）
+    double lastSteadySendAt = -1.0;
+    double sentSteadyDb = -1.0;
     bool dirty = true;
     bool wasVisible = false;
     bool firstSubmit = true;
@@ -1936,8 +2239,9 @@ int runOverlay(const Options& options) {
      */
     const auto viewingLive = [&]() { return panel.viewingActive(); };
     /**
-     * プリセットにする。イヤホン = エコー除去オフ・ノイズ除去オフ、スピーカー = エコー除去オン・ノイズ除去オフ。
-     * 今の出口なら、ワーカーが 2 つ書いてから 1 回だけ読み直す。ノイズ除去のバーの値は変えない。
+     * プリセットにする。イヤホン = エコー除去オフ・ノイズ除去オフ、スピーカー = エコー除去オン・ノイズ除去オフ
+     * （ノイズ除去オフ = Valve のノイズ除去も、一定の雑音を消すも使わない）。
+     * 今の出口なら、ワーカーがまとめて書いてから 1 回だけ読み直す。ノイズ除去のバーの値は変えない。
      * @param action Earphone か Speaker
      */
     const auto applyPreset = [&](PanelAction action) {
@@ -1946,30 +2250,40 @@ int runOverlay(const Options& options) {
                      speaker ? "スピーカー（エコー除去オン・ノイズ除去オフ）" : "イヤホン（エコー除去オフ・ノイズ除去オフ）",
                      viewingLive() ? "今の出口" : panel.viewedOutputKey().c_str());
         if (viewingLive()) {
-            presetTicket = worker.request(MicCommand::applySettings(speaker, false, false, 0, 0, false));
+            presetTicket = worker.request(MicCommand::applySettings(speaker, NoiseMode::Off, false, 0, 0, 0, false));
             outputSync.noteWrite(presetTicket);
             panel.holdPreset(action, nowSeconds() + 8.0);  // 書き込みが詰まっても、8 秒で実際の値の表示に戻す
         }
         changeViewedProfile([speaker](OutputProfile& p) {
             p.echo = speaker;
-            p.ns = false;
+            p.setNoiseMode(NoiseMode::Off);
         });
     };
     /**
-     * エコー除去・ノイズ除去を 1 つ切り替える（表示している出口の設定として覚え、今の出口なら書く）。
-     * @param action EchoOn / EchoOff / NsOn / NsOff
+     * エコー除去を切り替えるか、ノイズ除去の種類を選ぶ（表示している出口の設定として覚え、今の出口なら書く）。
+     * @param action EchoOn / EchoOff / NsOff（オフ）/ NsOn（Valve のノイズ除去）/ SteadyOn（一定の雑音を消す）
      */
     const auto applyToggle = [&](PanelAction action) {
-        const bool echo = action == PanelAction::EchoOn || action == PanelAction::EchoOff;
-        const bool on = action == PanelAction::EchoOn || action == PanelAction::NsOn;
-        std::fprintf(stderr, "[操作] %s %s（%s）\n", echo ? "エコー除去" : "ノイズ除去", on ? "オン" : "オフ",
-                     viewingLive() ? "今の出口" : panel.viewedOutputKey().c_str());
-        if (viewingLive()) {
-            MicCommand command {echo ? MicCommand::Kind::SetEcho : MicCommand::Kind::SetNs};
-            command.value = on;
-            outputSync.noteWrite(worker.request(command));
+        if (action == PanelAction::EchoOn || action == PanelAction::EchoOff) {
+            const bool on = action == PanelAction::EchoOn;
+            std::fprintf(stderr, "[操作] エコー除去 %s（%s）\n", on ? "オン" : "オフ",
+                         viewingLive() ? "今の出口" : panel.viewedOutputKey().c_str());
+            if (viewingLive()) {
+                MicCommand command {MicCommand::Kind::SetEcho};
+                command.value = on;
+                outputSync.noteWrite(worker.request(command));
+            }
+            changeViewedProfile([on](OutputProfile& p) { p.echo = on; });
+            return;
         }
-        changeViewedProfile([echo, on](OutputProfile& p) { (echo ? p.echo : p.ns) = on; });
+        const NoiseMode mode = action == PanelAction::SteadyOn ? NoiseMode::Steady
+                               : action == PanelAction::NsOn   ? NoiseMode::Valve
+                                                               : NoiseMode::Off;
+        std::fprintf(stderr, "[操作] ノイズ除去: %s（%s）\n",
+                     mode == NoiseMode::Steady ? "一定の雑音を消す" : (mode == NoiseMode::Valve ? "Valve のノイズ除去" : "オフ"),
+                     viewingLive() ? "今の出口" : panel.viewedOutputKey().c_str());
+        if (viewingLive()) outputSync.noteWrite(worker.request(MicCommand::noiseMode(mode)));
+        changeViewedProfile([mode](OutputProfile& p) { p.setNoiseMode(mode); });
     };
     /**
      * 出口の「頭切れを防ぐ」だけを切り替えて保存する（音の出口を選ぶ画面の行のスイッチ）。
@@ -2016,13 +2330,49 @@ int runOverlay(const Options& options) {
                      viewingLive() ? "今の出口" : panel.viewedOutputKey().c_str());
     };
     /**
+     * 一定の雑音を消す強さを変える（sendNsParams と同じ。今の出口ならワーカーに頼み、読み直しが追いつくまで表示を保つ）。
+     * @param db 消す強さ（dB）
+     * @param save 出口の設定として保存するか（離したとき・標準に戻す）
+     */
+    const auto sendSteadyDb = [&](double db, bool save) {
+        db = clampSteadyDb(db);
+        if (viewingLive() && db != sentSteadyDb) {
+            MicCommand command {MicCommand::Kind::SetSteadyDb};
+            command.steadyDb = db;
+            outputSync.noteWrite(worker.request(command));
+            sentSteadyDb = db;
+            lastSteadySendAt = nowSeconds();
+        }
+        panel.holdSteadyDb(db, nowSeconds() + 1.5);
+        if (!save) return;
+        changeViewedProfile([db](OutputProfile& p) { p.steadyDb = db; });
+        std::fprintf(stderr, "[一定の雑音] 消す強さ %.0f dB を保存しました（%s）\n", db,
+                     viewingLive() ? "今の出口" : panel.viewedOutputKey().c_str());
+    };
+    /**
+     * バーのドラッグを終わらせ、最後の値を送って保存する（どのバーでも。離したとき・タブの切り替え・パネルを閉じたとき）。
+     * @return ドラッグしていたら true
+     */
+    const auto finishAnyDrag = [&]() {
+        double vad = 0.0;
+        double grace = 0.0;
+        double db = 0.0;
+        if (finishSteadyDrag(panel, db)) {
+            sendSteadyDb(db, true);
+            return true;
+        }
+        if (finishDrag(panel, vad, grace)) {
+            sendNsParams(vad, grace, true);
+            return true;
+        }
+        return false;
+    };
+    /**
      * タブを切り替えて保存する。バーをドラッグしていたら、先に最後の値を送って保存する。
      * @param tab 切り替え先
      */
     const auto switchTab = [&](PanelTab tab) {
-        double vad = 0.0;
-        double grace = 0.0;
-        if (finishDrag(panel, vad, grace)) sendNsParams(vad, grace, true);
+        finishAnyDrag();
         if (config.tab == tab) return;
         config.tab = tab;
         std::fprintf(stderr, "[操作] タブ: %s\n", tab == PanelTab::Quick ? "かんたん" : "細かく調整");
@@ -2059,7 +2409,8 @@ int runOverlay(const Options& options) {
             case PanelAction::AppsOpenMenu:
             case PanelAction::AppsConfirmCancel:
             case PanelAction::NsVadSlider:       // バーはドラッグのたびに下で送る
-            case PanelAction::NsGraceSlider: break;
+            case PanelAction::NsGraceSlider:
+            case PanelAction::SteadySlider: break;
             case PanelAction::ShowApps: apps.refreshIfStale(0); break;  // 入っているか・動いているかを見直す
             case PanelAction::AppsOpenList:
                 // 一覧を開いたら、古ければサイトから取りに行く（オンのときだけ・1 時間に 1 回まで）
@@ -2096,10 +2447,15 @@ int runOverlay(const Options& options) {
             case PanelAction::EchoOn:
             case PanelAction::EchoOff:
             case PanelAction::NsOn:
-            case PanelAction::NsOff: applyToggle(action); break;
+            case PanelAction::NsOff:
+            case PanelAction::SteadyOn: applyToggle(action); break;
             case PanelAction::NsReset:
                 std::fprintf(stderr, "[操作] ノイズ除去の強さを標準に戻す\n");
                 sendNsParams(kNsVadDefault, kNsGraceDefault, true);
+                break;
+            case PanelAction::SteadyReset:
+                std::fprintf(stderr, "[操作] 一定の雑音を消す強さを標準に戻す\n");
+                sendSteadyDb(kSteadyDbDefault, true);
                 break;
             case PanelAction::KeepAwakeOn:
             case PanelAction::KeepAwakeOff: setKeepAwake(hit.key, action == PanelAction::KeepAwakeOn); break;
@@ -2184,6 +2540,8 @@ int runOverlay(const Options& options) {
     const auto releasePointer = [&](bool leave) {
         double vad = 0.0;
         double grace = 0.0;
+        double db = 0.0;
+        const bool wasSteadyDragging = finishSteadyDrag(panel, db);
         const bool wasDragging = finishDrag(panel, vad, grace);
         PanelHit hit;
         if (leave) {
@@ -2192,6 +2550,7 @@ int runOverlay(const Options& options) {
             hit = panel.pointerUp();
         }
         if (wasDragging) sendNsParams(vad, grace, true);
+        if (wasSteadyDragging) sendSteadyDb(db, true);
         handleHit(hit);
     };
     double nextOverlayCheck = nowSeconds() + kOverlayCheckSec;
@@ -2265,9 +2624,7 @@ int runOverlay(const Options& options) {
             if (voice.busy()) std::fprintf(stderr, "[声] パネルが閉じたので、録音・再生を止めます\n");
             voice.shutdown();
             // バーをドラッグしたまま閉じたときも、最後の値を送って保存する
-            double vad = 0.0;
-            double grace = 0.0;
-            if (finishDrag(panel, vad, grace)) sendNsParams(vad, grace, true);
+            finishAnyDrag();
             // 次に開いたときは、マイクの設定の画面・今の出口の表示から（重ねた画面も閉じる）
             panel.resetView();
         }
@@ -2289,6 +2646,7 @@ int runOverlay(const Options& options) {
                         panel.displayedNsValues(vad, grace);
                         sendNsParams(vad, grace, false);
                     }
+                    if (hit.action == PanelAction::SteadySlider) sendSteadyDb(panel.displayedSteadyDb(), false);
                     handleHit(hit);
                     dirty = true;
                     break;
@@ -2314,7 +2672,9 @@ int runOverlay(const Options& options) {
             dirty = true;
         }
         // バーのドラッグ中は、値が変わっていれば 100ms おきに送る（連打しない）
-        if (panel.dragging() && nowSeconds() - lastNsSendAt >= 0.1) {
+        if (panel.dragAction() == PanelAction::SteadySlider) {
+            if (nowSeconds() - lastSteadySendAt >= 0.1) sendSteadyDb(panel.displayedSteadyDb(), false);
+        } else if (panel.dragging() && nowSeconds() - lastNsSendAt >= 0.1) {
             double vad = 0.0;
             double grace = 0.0;
             panel.displayedNsValues(vad, grace);

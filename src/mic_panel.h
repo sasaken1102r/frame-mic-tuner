@@ -37,11 +37,14 @@ enum class PanelAction {
     Speaker,          ///< プリセット: Frame のスピーカー（エコー除去オン・ノイズ除去オフ）
     EchoOn,
     EchoOff,
-    NsOn,
-    NsOff,
+    NsOn,             ///< ノイズ除去の種類: Valve のノイズ除去（声以外を消す）
+    NsOff,            ///< ノイズ除去の種類: オフ
+    SteadyOn,         ///< ノイズ除去の種類: 一定の雑音を消す（Frame Mic Tuner のもの）
     NsVadSlider,      ///< 判定の厳しさのバー（押したところへ飛び、そのままドラッグ）
     NsGraceSlider,    ///< 余韻のバー
     NsReset,          ///< 標準（SteamOS の既定 23% / 500ms）に戻す
+    SteadySlider,     ///< 一定の雑音を消す強さのバー
+    SteadyReset,      ///< 一定の雑音を消す強さを標準（20 dB）に戻す
     UndoSwitch,      ///< 自動で切り替えた知らせの「元に戻す」
     UseBuiltinMic,    ///< 「Frame 内蔵マイクに戻す」
     Record,           ///< 録音の開始・停止
@@ -224,6 +227,9 @@ public:
     /** @return バーをドラッグしている間 true */
     bool dragging() const { return dragAction_ != PanelAction::None; }
 
+    /** @return ドラッグしているバー（NsVadSlider・NsGraceSlider・SteadySlider。していなければ None） */
+    PanelAction dragAction() const { return dragAction_; }
+
     /**
      * バーの値を書き込みに出した直後、読み直しが追いつくまでの間、その値を表示に使う（表示が戻ってちらつかないように）。
      * @param vad 判定の厳しさ（%）
@@ -231,6 +237,13 @@ public:
      * @param until この時刻（秒、単調増加）まで
      */
     void holdNsValues(double vad, double grace, double until);
+
+    /**
+     * 一定の雑音を消す強さを書き込みに出した直後、読み直しが追いつくまでの間、その値を表示に使う（holdNsValues と同じ）。
+     * @param db 消す強さ（dB）
+     * @param until この時刻（秒、単調増加）まで
+     */
+    void holdSteadyDb(double db, double until);
 
     /**
      * プリセットを書き込んでいる間、押したカードを選択中の見た目で保つ（読み直しが終わるまで戻さない）。
@@ -253,6 +266,12 @@ public:
     void displayedNsValues(double& vad, double& grace) const;
 
     /**
+     * 今「消す強さ」のバーに出している値（displayedNsValues と同じ決まり）。
+     * @return 消す強さ（dB）
+     */
+    double displayedSteadyDb() const;
+
+    /**
      * バーのドラッグを終わらせる（押している見た目も消す）。
      * @return ドラッグしていたら true
      */
@@ -260,7 +279,7 @@ public:
 
     /**
      * 確認用（--self-test）: 最後に描いたときのバーの溝の真ん中の座標。
-     * @param action NsVadSlider か NsGraceSlider
+     * @param action NsVadSlider・NsGraceSlider・SteadySlider
      * @param x 書き込み先
      * @param y 書き込み先
      * @return 描いていれば true
@@ -301,7 +320,7 @@ public:
     void setPointerForPreview(double x, double y, bool down);
     /**
      * バーをドラッグしている状態にする。
-     * @param action NsVadSlider か NsGraceSlider
+     * @param action NsVadSlider・NsGraceSlider・SteadySlider
      * @param value ドラッグ中の値
      */
     void setDragForPreview(PanelAction action, double value);
@@ -376,6 +395,9 @@ private:
     double holdVad_ = 0.0;
     double holdGrace_ = 0.0;
     double holdUntil_ = -1.0;
+    double baseSteadyDb_ = 20.0;   ///< 最後に描いたときの「消す強さ」のバーの元の値
+    double holdSteadyDb_ = 0.0;
+    double holdSteadyUntil_ = -1.0;
     PanelAction presetHold_ = PanelAction::None;  ///< 書き込み中のプリセット（その間は選択中の見た目で保つ）
     double presetHoldUntil_ = -1.0;
     // 重ねた画面の一覧のスクロール（スティック・ドラッグ）
@@ -432,10 +454,32 @@ private:
     void drawSettings(const frame_ui::Canvas& ui, const UiText& t, const Config& config, const PanelModel& model);
     void drawSelectors(const frame_ui::Canvas& ui, const UiText& t, const Config& config, const PanelModel& model);
     void drawQuick(const frame_ui::Canvas& ui, const UiText& t, const Config& config, const PanelModel& model,
-                   bool echo, bool ns, bool known, const std::string& outputName);
-    void drawFine(const frame_ui::Canvas& ui, const UiText& t, const PanelModel& model, bool echo, bool ns, bool known,
-                  bool nsParamsKnown);
-    void drawExternal(const frame_ui::Canvas& ui, const UiText& t, const PanelModel& model, bool echo, bool ns,
+                   bool echo, NoiseMode mode, bool known, const std::string& outputName);
+    /**
+     * 細かく調整のタブ（エコー除去、ノイズ除去の種類 3 つ、その種類の強さ）。
+     * @param mode 表示するノイズ除去の種類
+     * @param known エコー除去・ノイズ除去の値を読めているか
+     * @param nsParamsKnown 判定の厳しさ・余韻を読めているか
+     * @param steadyParamsKnown 消す強さを読めているか
+     */
+    void drawFine(const frame_ui::Canvas& ui, const UiText& t, const PanelModel& model, bool echo, NoiseMode mode, bool known,
+                  bool nsParamsKnown, bool steadyParamsKnown);
+    /**
+     * バー 1 本（見出しと説明・溝・つまみ・右の値）。当たり判定と溝の位置も登録する。
+     * @param top 行の上（高さ 48）
+     * @param action バーの操作
+     * @param min 値の下限
+     * @param max 値の上限
+     * @param value 今の値
+     * @param title 見出し
+     * @param hint 説明
+     * @param valueText 右に出す値（読めていなければ "--"）
+     * @param active 効いているか（効いていなければ灰色）
+     * @param known 値を読めているか（読めていなければつまみを出さず、押せない）
+     */
+    void drawSlider(const frame_ui::Canvas& ui, double top, PanelAction action, double min, double max, double value,
+                    const std::string& title, const std::string& hint, const std::string& valueText, bool active, bool known);
+    void drawExternal(const frame_ui::Canvas& ui, const UiText& t, const PanelModel& model, bool echo, NoiseMode mode,
                       const std::string& outputName);
     void drawPipeline(const frame_ui::Canvas& ui, const UiText& t, const MicState& state, bool external);
     void drawVoice(const frame_ui::Canvas& ui, const UiText& t, const VoiceView& voice);

@@ -24,6 +24,10 @@ app_config="$config_home/frame-mic-tuner"
 wp_script="$data_home/wireplumber/scripts/frame-mic-tracker.lua"
 wp_conf="$config_home/wireplumber/wireplumber.conf.d/90-frame-mic.conf"
 update_script="$data_home/frame-mic-tuner/frame-update.sh"
+# The steady-noise remover: a LADSPA plugin run by its own PipeWire process (a client, not the PipeWire daemon)
+denoise_plugin="$HOME/.local/lib/frame-mic-tuner/frame-mic-denoise.so"
+denoise_conf="$data_home/frame-mic-tuner/frame-mic-denoise.conf"
+denoise_unit="frame-mic-tuner-denoise.service"
 
 # A release tar.gz has the built binary next to this script and no CMakeLists.txt; a git checkout has
 # the source and no binary here yet (or an outdated one from a previous build).
@@ -58,7 +62,11 @@ if [[ $uninstall -eq 1 ]]; then
     # Stop and disable the service, and quit an instance started from the dashboard (+), if any.
     systemctl --user disable --now "$unit" 2>/dev/null || true
     pkill -TERM -x frame-mic-tuner 2>/dev/null || true
+    # The steady-noise remover's own PipeWire process (stopping it only takes that filter out of the mic)
+    systemctl --user disable --now "$denoise_unit" 2>/dev/null || true
     rm -f "$bin" "$desktop" "$unit_dir/$unit" "$wp_script" "$wp_conf" "$update_script"
+    rm -f "$unit_dir/$denoise_unit" "$denoise_plugin" "$denoise_conf"
+    rmdir "$(dirname "$denoise_plugin")" 2>/dev/null || true
     rmdir "$(dirname "$update_script")" 2>/dev/null || true
     for size in 48 128 256; do
         rm -f "$icons/${size}x${size}/apps/frame-mic-tuner.png"
@@ -72,6 +80,7 @@ if [[ $uninstall -eq 1 ]]; then
         # Forget the saved switch values. Only these two keys; nothing else in WirePlumber changes.
         wpctl settings --delete frame-mic.echo-cancel >/dev/null 2>&1 || true
         wpctl settings --delete frame-mic.noise-suppression >/dev/null 2>&1 || true
+        wpctl settings --delete frame-mic.steady-noise >/dev/null 2>&1 || true
         echo "Removed Frame Mic Tuner, its settings and the saved frame-mic.* values."
     else
         echo "Removed Frame Mic Tuner. Its settings are kept in $app_config (add --purge to delete them)."
@@ -110,9 +119,11 @@ if [[ $from_source -eq 1 ]]; then
     fi
     ninja -C build
     built_bin="build/frame-mic-tuner"
+    built_plugin="build/frame-mic-denoise.so"
 else
     # A release tar.gz: the binary is already built, right next to this script
     built_bin="$here/frame-mic-tuner"
+    built_plugin="$here/frame-mic-denoise.so"
 fi
 
 # The app: binary, launcher entry for the dashboard's "+" list, icons, and the systemd unit
@@ -167,6 +178,35 @@ install_if_changed "$tmp" "$wp_script"
 sed "s|@SCRIPT_PATH@|$wp_script|" contrib/wireplumber/90-frame-mic.conf > "$tmp"
 install_if_changed "$tmp" "$wp_conf"
 
+# The steady-noise remover. It runs all the time as its own small PipeWire process and is only put into the
+# mic's path while the setting frame-mic.steady-noise is on (the WirePlumber script above decides that).
+# Restarting this process is safe: only this filter leaves the mic for a moment; PipeWire itself keeps running.
+denoise_changed=0
+if [[ ! -f "$denoise_plugin" ]] || ! cmp -s "$built_plugin" "$denoise_plugin"; then
+    mkdir -p "$(dirname "$denoise_plugin")"
+    # Copy next to it and rename, so the running process never sees a half-written file
+    install -m644 "$built_plugin" "$denoise_plugin.tmp"
+    mv -f "$denoise_plugin.tmp" "$denoise_plugin"
+    denoise_changed=1
+fi
+sed "s|@PLUGIN_PATH@|$denoise_plugin|" contrib/denoise/frame-mic-denoise.conf > "$tmp"
+if [[ ! -f "$denoise_conf" ]] || ! cmp -s "$tmp" "$denoise_conf"; then
+    install -Dm644 "$tmp" "$denoise_conf"
+    denoise_changed=1
+fi
+if [[ ! -f "$unit_dir/$denoise_unit" ]] || ! cmp -s "contrib/denoise/$denoise_unit" "$unit_dir/$denoise_unit"; then
+    install -Dm644 "contrib/denoise/$denoise_unit" "$unit_dir/$denoise_unit"
+    systemctl --user daemon-reload
+    denoise_changed=1
+fi
+systemctl --user enable "$denoise_unit" >/dev/null 2>&1 || true
+if [[ $denoise_changed -eq 1 ]] && systemctl --user is-active --quiet "$denoise_unit"; then
+    systemctl --user restart "$denoise_unit" || true
+else
+    systemctl --user start "$denoise_unit" || true
+fi
+denoise_state="$(systemctl --user is-active "$denoise_unit" 2>/dev/null || true)"
+
 if [[ $autostart -eq 1 ]]; then
     systemctl --user enable "$unit"
 fi
@@ -186,6 +226,7 @@ Frame Mic Tuner is installed:
   $bin
   $desktop
   $unit_dir/$unit (start with SteamVR: ${autostart_state:-unknown}; switch it in the panel)
+  $unit_dir/$denoise_unit (steady-noise remover: ${denoise_state:-unknown})
 Open it from the SteamVR dashboard: + (launch a program) > Frame Mic Tuner, then the "Mic" icon.
 EOF
 if pgrep -x frame-mic-tuner >/dev/null 2>&1; then

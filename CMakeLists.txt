@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(frame-mic-tuner VERSION 0.3.6 LANGUAGES CXX)
+project(frame-mic-tuner VERSION 0.4.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -79,6 +79,12 @@ set_target_properties(frame-mic-tuner PROPERTIES
 
 install(TARGETS frame-mic-tuner RUNTIME DESTINATION bin)
 
+# 一定の雑音だけを引くノイズ除去（LADSPA プラグイン。別プロセスの PipeWire filter-chain が読む）
+add_library(frame-mic-denoise MODULE src/denoise/ladspa_denoise.cpp src/denoise/spectral_denoiser.cpp)
+set_target_properties(frame-mic-denoise PROPERTIES PREFIX "" CXX_VISIBILITY_PRESET hidden)
+target_include_directories(frame-mic-denoise PRIVATE src)
+target_compile_options(frame-mic-denoise PRIVATE -Wall -Wextra)
+
 include(CTest)
 if(BUILD_TESTING)
   add_test(NAME self-test COMMAND frame-mic-tuner --self-test)
@@ -90,4 +96,12 @@ if(BUILD_TESTING)
     set_property(TARGET rgba-test PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
   endif()
   add_test(NAME rgba COMMAND rgba-test)
+  add_executable(denoise-test tests/denoise_test.cpp src/denoise/spectral_denoiser.cpp)
+  target_include_directories(denoise-test PRIVATE src)
+  target_compile_options(denoise-test PRIVATE -Wall -Wextra)
+  add_test(NAME denoise COMMAND denoise-test)
+  # 試し聞き・測定用に wav を通す道具（リリースには入れない）
+  add_executable(denoise-wav tests/denoise_wav.cpp src/denoise/spectral_denoiser.cpp)
+  target_include_directories(denoise-wav PRIVATE src)
+  target_compile_options(denoise-wav PRIVATE -Wall -Wextra)
 endif()

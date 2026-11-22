@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # リリースの tar.gz を作る。Steam Frame の上で実行する（本体の cairo・FreeType・PipeWire・SteamVR の OpenVR にリンクするため）。
 #   scripts/package.sh   → dist/frame-mic-tuner-<バージョン>.tar.gz, dist/SHA256SUMS
-# 中身: 実行ファイル、install.sh（tar.gz からならビルドせずそのまま入れられる）、vendor/frame-updater/frame-update.sh
+# 中身: 実行ファイル、ノイズ除去のプラグイン（frame-mic-denoise.so）、install.sh（tar.gz からならビルドせずそのまま入れられる）、vendor/frame-updater/frame-update.sh
 # （install.sh が ~/.local/share/frame-mic-tuner/ に置く更新スクリプト）、contrib（WirePlumber・.desktop・.service・
 # アイコン・設定の例）、README（7 言語）・CHANGELOG・LICENSE など。CMakeLists.txt や src/ は入れない
 # （install.sh はそれが無ければ「tar.gz から」と見なし、ビルドをせずに入れる）。
@@ -30,17 +30,20 @@ cmake --build "$build_dir" --clean-first
 # 安定版 SteamOS（glibc 2.39）でも起動するか: 要求する glibc の版が 2.38 を超えていたら止める
 # （ベータの Frame でビルドすると、関数によっては新しい版につながる。0.3.6 の前に log10f が GLIBC_2.43 になった）
 max_glibc="2.38"
-need_glibc="$(objdump -T "$build_dir/$name" | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sed 's/GLIBC_//' | sort -Vu | tail -n 1)"
-if [[ -z "$need_glibc" ]]; then
-    echo "Could not read the glibc versions from $build_dir/$name (objdump -T)" >&2
-    exit 1
-fi
-if [[ "$(printf '%s\n%s\n' "$need_glibc" "$max_glibc" | sort -V | tail -n 1)" != "$max_glibc" ]]; then
-    echo "The binary needs GLIBC_$need_glibc (stable SteamOS has 2.39; allowed up to $max_glibc):" >&2
-    objdump -T "$build_dir/$name" | grep -E "GLIBC_$need_glibc" >&2
-    exit 1
-fi
-echo "glibc: needs up to GLIBC_$need_glibc (allowed up to $max_glibc)"
+# 実行ファイルと、ノイズ除去のプラグイン（frame-mic-denoise.so）の両方を確かめる
+for built in "$build_dir/$name" "$build_dir/frame-mic-denoise.so"; do
+    need_glibc="$(objdump -T "$built" | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sed 's/GLIBC_//' | sort -Vu | tail -n 1)"
+    if [[ -z "$need_glibc" ]]; then
+        echo "Could not read the glibc versions from $built (objdump -T)" >&2
+        exit 1
+    fi
+    if [[ "$(printf '%s\n%s\n' "$need_glibc" "$max_glibc" | sort -V | tail -n 1)" != "$max_glibc" ]]; then
+        echo "$built needs GLIBC_$need_glibc (stable SteamOS has 2.39; allowed up to $max_glibc):" >&2
+        objdump -T "$built" | grep -E "GLIBC_$need_glibc" >&2
+        exit 1
+    fi
+    echo "glibc: $(basename "$built") needs up to GLIBC_$need_glibc (allowed up to $max_glibc)"
+done
 
 version="$("$build_dir/$name" --version | awk '{print $2}')"
 if [[ -z "$version" || "$version" == "unknown" ]]; then
@@ -51,9 +54,13 @@ fi
 stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
 root="$stage/$name"
-mkdir -p "$root/contrib/icons" "$root/contrib/wireplumber" "$root/vendor/frame-updater" "$root/third_party/openvr"
+mkdir -p "$root/contrib/icons" "$root/contrib/wireplumber" "$root/contrib/denoise" "$root/vendor/frame-updater" "$root/third_party/openvr"
 install -m755 "$build_dir/$name" "$root/$name"
 strip "$root/$name"
+# 一定の雑音を消すノイズ除去（LADSPA プラグインと、それを動かす PipeWire の設定・systemd のユニット）
+install -m644 "$build_dir/frame-mic-denoise.so" "$root/frame-mic-denoise.so"
+strip "$root/frame-mic-denoise.so"
+install -m644 contrib/denoise/* "$root/contrib/denoise/"
 install -m755 install.sh "$root/"
 install -m644 LICENSE THIRD_PARTY_LICENSES.md README.md README.ja.md README.sc.md README.de.md README.fr.md README.es.md README.it.md CHANGELOG.md "$root/"
 install -m644 "contrib/$name.service" "contrib/$name.desktop" contrib/config.example.json "$root/contrib/"

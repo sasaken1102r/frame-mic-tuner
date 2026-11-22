@@ -86,6 +86,13 @@ const UiText kJapanese = {
     "エコー除去", "スピーカーの音を消す", "ノイズ除去", "口の音など小さい音も消える", "オン", "オフ",
     "判定の厳しさ", "低いほど声以外も通る", "余韻", "声のあと音を通す時間", "オフの間は効きません", "標準に戻す",
     "標準は 23%・500ms（SteamOS の値）",
+    // 細かく調整: ノイズ除去の種類
+    "声以外を消す", "一定の雑音を消す", "消す強さ", "上げすぎると声がこもる",
+    "息やささやき声は残して、空気清浄機やファンのような一定の音だけを下げます", "標準は 20 dB",
+    "「一定の雑音を消す」は Frame を再起動すると使えます",
+    "一定の雑音を消すサービスが動いていません（frame-mic-tuner-denoise.service）",
+    "一定の雑音を消す", "・一定の雑音を消す", "「一定の雑音を消す」の切り替えに失敗（wpctl）",
+    "一定の雑音を消す強さを変えられません（pw-cli）",
     // 外付けのマイク
     "いまは %s を使っています",
     "エコー除去・ノイズ除去がかかるのは、Frame の内蔵マイクだけです。このマイクの音は、そのままアプリに届きます。",
@@ -169,6 +176,13 @@ const UiText kEnglish = {
     "Echo cancel", "Removes speaker sound", "Noise filter", "Also cuts quiet mouth sounds", "On", "Off",
     "Strictness", "Lower lets more through", "Hold", "Sound kept after speech", "No effect while off", "Default",
     "Default: 23% · 500 ms (SteamOS)",
+    // Fine-tune: noise filter type
+    "Voice only", "Steady noise", "Strength", "Too high muffles the voice",
+    "Keeps breath and whispers; only lowers steady sounds like air purifiers and fans", "Default: 20 dB",
+    "Restart the Frame to use Steady noise",
+    "The steady noise remover isn't running (frame-mic-tuner-denoise.service)",
+    "Steady noise", ", steady noise filter on", "Steady noise switch failed (wpctl)",
+    "Can't change the steady noise filter (pw-cli)",
     // External mic
     "Using %s now",
     "Echo cancel and the noise filter only work on the Frame's built-in mic. This mic's sound goes to apps as it is.",
@@ -252,6 +266,13 @@ const UiText kSimplifiedChinese = {
     "回声消除", "消除 Frame 扬声器的声音", "噪声抑制", "消除细小声音，输出会变沉闷", "开", "关",
     "麦克风灵敏度", "越低越容易触发收音", "收音保持时间", "说完后继续收音的时间", "关闭时不生效", "恢复默认",
     "默认 23% · 500ms（SteamOS 的值）",
+    // 精细调整：噪声抑制的类型
+    "只留人声", "消除持续噪声", "消除强度", "过大时声音会发闷",
+    "保留呼吸声和耳语，只降低空气净化器、风扇等持续的声音", "默认 20 dB",
+    "重启 Frame 后即可使用“消除持续噪声”",
+    "持续噪声消除服务未运行（frame-mic-tuner-denoise.service）",
+    "消除持续噪声", "・消除持续噪声", "“消除持续噪声”切换失败（wpctl）",
+    "无法修改持续噪声的消除强度（pw-cli）",
     // 外接麦克风
     "当前使用 %s",
     "回声消除和噪声抑制只对 Frame 内置麦克风生效。这个麦克风的声音会原样传给应用。",
@@ -334,6 +355,13 @@ const UiText kGerman = {
     "Echofilter", "Entfernt Lautsprecherklang", "Rauschfilter", "Schneidet auch leise Mundgeräusche", "Ein", "Aus",
     "Strenge", "Tiefer lässt mehr durch", "Nachklang", "Ton nach dem Sprechen", "Wirkt nicht, solange aus", "Standard",
     "Standard: 23 % · 500 ms (SteamOS)",
+    // Feinjustierung: Art des Rauschfilters
+    "Nur Stimme", "Dauerrauschen", "Stärke", "Zu hoch klingt dumpf",
+    "Atem und Flüstern bleiben; nur Dauergeräusche wie Luftreiniger und Lüfter werden leiser", "Standard: 20 dB",
+    "„Dauerrauschen“ geht nach einem Neustart der Frame",
+    "Der Dauerrauschfilter läuft nicht (frame-mic-tuner-denoise.service)",
+    "Dauerrauschen", ", Dauerrauschfilter an", "Dauerrauschen-Umschaltung fehlgeschlagen (wpctl)",
+    "Dauerrauschfilter nicht änderbar (pw-cli)",
     // Externes Mikrofon
     "Gerade wird %s benutzt",
     "Echofilter und Rauschfilter gelten nur für das eingebaute Frame-Mikrofon. Der Ton dieses Mikrofons geht unverändert an Apps.",
@@ -417,6 +445,14 @@ const UiText kFrench = {
     "Annulation d'écho", "Retire le son des haut-parleurs", "Filtre de bruit", "Coupe aussi les sons de bouche faibles", "Oui", "Non",
     "Sévérité", "Plus bas, plus ça passe", "Tenue", "Son gardé après la voix", "Sans effet si désactivé", "Défaut",
     "Défaut : 23 % · 500 ms (SteamOS)",
+    // Réglage fin : type de filtre de bruit
+    "Voix seule", "Bruit continu", "Intensité", "Trop haut étouffe la voix",
+    "Garde le souffle et les chuchotements ; baisse seulement les bruits continus (purificateur d'air, ventilateur)",
+    "Défaut : 20 dB",
+    "Redémarre le Frame pour utiliser « Bruit continu »",
+    "Le filtre de bruit continu ne tourne pas (frame-mic-tuner-denoise.service)",
+    "Bruit continu", ", filtre de bruit continu activé", "Basculement du bruit continu échoué (wpctl)",
+    "Filtre de bruit continu non modifiable (pw-cli)",
     // Micro externe
     "Utilisation de %s",
     "L'annulation d'écho et le filtre de bruit ne valent que pour le micro intégré du Frame. Le son de ce micro va aux apps tel quel.",
@@ -502,6 +538,14 @@ const UiText kSpanish = {
     "Cancelación de eco", "Quita el sonido del altavoz", "Filtro de ruido", "También corta sonidos bajos de la boca", "Sí", "No",
     "Sensibilidad", "Más bajo deja pasar más", "Retención", "Sonido tras hablar", "No actúa si está apagado", "Predeterminado",
     "Predeterminado: 23 % · 500 ms (SteamOS)",
+    // Ajuste fino: tipo de filtro de ruido
+    "Solo voz", "Ruido constante", "Intensidad", "Demasiado apaga la voz",
+    "Conserva la respiración y los susurros; solo baja sonidos constantes como purificadores de aire y ventiladores",
+    "Predeterminado: 20 dB",
+    "Reinicia el Frame para usar \"Ruido constante\"",
+    "El filtro de ruido constante no está en marcha (frame-mic-tuner-denoise.service)",
+    "Ruido constante", ", filtro de ruido constante activado", "Falló el cambio del ruido constante (wpctl)",
+    "No se puede cambiar el filtro de ruido constante (pw-cli)",
     // Micrófono externo
     "Ahora se usa %s",
     "La cancelación de eco y el filtro de ruido solo actúan en el micrófono integrado de Frame. El sonido de este micrófono llega a las apps tal cual.",
@@ -586,6 +630,13 @@ const UiText kItalian = {
     "Cancellazione eco", "Toglie il suono degli altoparlanti", "Filtro rumore", "Taglia anche i suoni bassi della bocca", "Sì", "No",
     "Severità", "Più basso, più passa", "Tenuta", "Coda dopo il parlato", "Non ha effetto se spento", "Predefinito",
     "Predefinito: 23% · 500 ms (SteamOS)",
+    // Regolazione fine: tipo di filtro rumore
+    "Solo voce", "Rumore costante", "Intensità", "Troppo attutisce la voce",
+    "Tiene respiro e sussurri; abbassa solo i suoni costanti come purificatori d'aria e ventole", "Predefinito: 20 dB",
+    "Riavvia il Frame per usare \"Rumore costante\"",
+    "Il filtro del rumore costante non è attivo (frame-mic-tuner-denoise.service)",
+    "Rumore costante", ", filtro rumore costante attivo", "Cambio del rumore costante non riuscito (wpctl)",
+    "Impossibile cambiare il filtro del rumore costante (pw-cli)",
     // Microfono esterno
     "Ora si usa %s",
     "La cancellazione dell'eco e il filtro rumore valgono solo per il microfono integrato di Frame. Il suono di questo microfono arriva alle app così com'è.",

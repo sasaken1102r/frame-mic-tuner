@@ -77,6 +77,13 @@ OutputProfile readProfile(const JsonValue& object, const std::string& key, std::
     if (vad != nullptr && vad->isNumber()) profile.nsVad = clampNsVad(vad->number);
     const JsonValue* grace = object.get("ns_vad_grace_ms");
     if (grace != nullptr && grace->isNumber()) profile.nsGrace = clampNsGrace(grace->number);
+    // 一定の雑音を消す（無い = 前の版の設定ファイル。firstProfile の既定のまま = オフ・20 dB）。
+    // ns と両方 true のときは、かけるときに一定の雑音を消すにする（OutputProfile::noiseMode）
+    if (const JsonValue* steady = object.get("steady_noise"); steady != nullptr && steady->isBool()) {
+        profile.steady = steady->boolean;
+    }
+    const JsonValue* steadyDb = object.get("steady_noise_db");
+    if (steadyDb != nullptr && steadyDb->isNumber()) profile.steadyDb = clampSteadyDb(steadyDb->number);
     if (const JsonValue* last = object.get("last_used"); last != nullptr && last->isString()) profile.lastUsed = last->text;
     // 音の頭切れを防ぐ（無い = 前の版の設定ファイル。firstProfile の既定のまま = AB13X の USB の出口だけオン）
     if (const JsonValue* keep = object.get("keep_awake"); keep != nullptr && keep->isBool()) profile.keepAwake = keep->boolean;
@@ -153,8 +160,8 @@ bool loadConfig(const std::string& path, Config& out, std::vector<std::string>& 
             warnings.push_back("ns_vad_threshold_percent と ns_vad_grace_ms は 2 つとも数値で書いてください");
         }
     }
-    // 音の出口ごとの設定: { "<出口のキー>": { "name", "kind", "echo", "ns", "ns_vad_threshold_percent", "ns_vad_grace_ms", "last_used",
-    // "keep_awake" } }
+    // 音の出口ごとの設定: { "<出口のキー>": { "name", "kind", "echo", "ns", "ns_vad_threshold_percent", "ns_vad_grace_ms",
+    // "steady_noise", "steady_noise_db", "last_used", "keep_awake" } }
     if (const JsonValue* outputs = root.get("outputs")) {
         if (outputs->isObject()) {
             config.outputsSaved = true;
@@ -210,10 +217,13 @@ bool saveConfig(const std::string& path, const Config& config, std::string& erro
             char numbers[160];
             std::snprintf(numbers, sizeof(numbers), "\"ns_vad_threshold_percent\": %.0f, \"ns_vad_grace_ms\": %.0f",
                           clampNsVad(p.nsVad), clampNsGrace(p.nsGrace));
+            char steadyDb[48];
+            std::snprintf(steadyDb, sizeof(steadyDb), ", \"steady_noise_db\": %.0f", clampSteadyDb(p.steadyDb));
             out << (first ? "\n" : ",\n") << "    " << jsonString(entry.first) << ": {\"name\": " << jsonString(p.name)
                 << ", \"kind\": \"" << (p.kind == OutputKind::Speaker ? "speaker" : "earphones") << "\""
                 << ", \"echo\": " << (p.echo ? "true" : "false") << ", \"ns\": " << (p.ns ? "true" : "false") << ", "
-                << numbers << ", \"last_used\": " << jsonString(p.lastUsed)
+                << numbers << ", \"steady_noise\": " << (p.steady ? "true" : "false") << steadyDb
+                << ", \"last_used\": " << jsonString(p.lastUsed)
                 << ", \"keep_awake\": " << (p.keepAwake ? "true" : "false") << "}";
             first = false;
         }

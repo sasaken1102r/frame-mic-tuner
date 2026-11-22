@@ -16,11 +16,13 @@
 struct MicCommand {
     enum class Kind {
         SetEcho,           ///< エコー除去（value = オン）
-        SetNs,             ///< ノイズ除去（value = オン）
+        SetNs,             ///< ノイズ除去（value = オン）。--print の --set-ns だけが使う（パネルは SetNoiseMode）
+        SetNoiseMode,      ///< ノイズ除去の種類（ns・steady。オフにする方を先に書き、2 つが同時にオンにならないようにする）
+        SetSteadyDb,       ///< 一定の雑音を消す強さ（steadyDb）
         SetAutostart,      ///< 自動起動（value = 有効）
         SetNsParams,       ///< ノイズ除去の強さ（vad・grace）
-        ApplySettings,     ///< 出口の設定をまとめてかける（value = エコー除去、ns、withNsParams なら vad・grace も）。
-                           ///< エコー除去 → ノイズ除去 → 強さの順に書いてから 1 回だけ読み直す
+        ApplySettings,     ///< 出口の設定をまとめてかける（value = エコー除去、ns・steady、withNsParams なら vad・grace・steadyDb も）。
+                           ///< エコー除去 → ノイズ除去の種類 → 強さの順に書いてから 1 回だけ読み直す
         SetMute,           ///< 既定のマイクのミュート（value = ミュートする。wpctl set-mute @DEFAULT_AUDIO_SOURCE@ 1|0）
         SetDefaultOutput,  ///< 音の出口を既定にする（nodeId・nodeName。wpctl set-default）
         SetDefaultInput,   ///< 使うマイクを既定にする（nodeId・nodeName）
@@ -29,8 +31,10 @@ struct MicCommand {
     bool value = false;
     double vad = 0.0;            ///< SetNsParams・ApplySettings: 判定の厳しさ（%）
     double grace = 0.0;          ///< SetNsParams・ApplySettings: 余韻（ms）
-    bool ns = false;             ///< ApplySettings: ノイズ除去
-    bool withNsParams = false;   ///< ApplySettings: 強さもかける
+    bool ns = false;             ///< ApplySettings・SetNoiseMode: Valve のノイズ除去
+    bool steady = false;         ///< ApplySettings・SetNoiseMode: 一定の雑音を消す
+    double steadyDb = 0.0;       ///< SetSteadyDb・ApplySettings: 一定の雑音を消す強さ（dB）
+    bool withNsParams = false;   ///< ApplySettings: 強さ（ノイズ除去の判定の厳しさ・余韻と、一定の雑音を消す強さ）もかける
     bool onlyIfChanged = false;  ///< ApplySettings: 今の値と同じものは書かない（自動の切り替え）
     int nodeId = -1;             ///< SetDefault*: ノードの id
     std::string nodeName {};     ///< SetDefault*: ノードの名前（読み返しで比べる）
@@ -38,14 +42,23 @@ struct MicCommand {
     /**
      * 出口の設定をまとめてかける書き込みを作る。
      * @param echo エコー除去
-     * @param ns ノイズ除去
+     * @param mode ノイズ除去の種類
      * @param withNsParams 強さもかけるか
      * @param vad 判定の厳しさ（%）
      * @param grace 余韻（ms）
+     * @param steadyDb 一定の雑音を消す強さ（dB）
      * @param onlyIfChanged 今の値と同じものは書かないか
      * @return 書き込み
      */
-    static MicCommand applySettings(bool echo, bool ns, bool withNsParams, double vad, double grace, bool onlyIfChanged);
+    static MicCommand applySettings(bool echo, NoiseMode mode, bool withNsParams, double vad, double grace, double steadyDb,
+                                    bool onlyIfChanged);
+
+    /**
+     * ノイズ除去の種類を切り替える書き込みを作る（パネルの「細かく調整」）。
+     * @param mode 種類
+     * @return 書き込み
+     */
+    static MicCommand noiseMode(NoiseMode mode);
 
     /**
      * 既定の出力・入力を切り替える書き込みを作る。
@@ -64,6 +77,7 @@ struct MicCommand {
  * 書き込みを頼まれたら、書いてすぐ読み直す。
  * ノイズ除去の強さは「かけたい値」を覚えておき、起動したとき（ノードが見つかるまで 5 秒おきに試す）と、
  * 読み直しでノードの id が変わっていたとき（PipeWire がノードを作り直したとき）にかけ直す。
+ * 一定の雑音を消す強さも同じ（frame-mic-tuner-denoise.service が起動し直すとノードの id が変わる）。
  */
 class MicWorker {
 public:
@@ -101,7 +115,8 @@ public:
     void refreshDevicesNow();
 
     /**
-     * 書き込みを頼む（書いたあと、すぐ読み直す）。ノイズ除去の強さは、まだ実行していない前の値を捨てて最後の値だけにする。
+     * 書き込みを頼む（書いたあと、すぐ読み直す）。ノイズ除去・一定の雑音を消す強さは、まだ実行していない前の値を捨てて
+     * 最後の値だけにする。
      * @param command 書き込み
      * @return 受付番号（completed() がこの番号以上になったら、書き込みと読み直しが終わっている）
      */
@@ -143,6 +158,10 @@ private:
     double desiredGrace_ = kNsGraceDefault;
     int appliedNodeId_ = -1;      ///< かけたい値を最後にかけたノードの id（-1 = まだ）
     NsHiddenWrite hiddenNs_;      ///< 書いた値が読み返しにまだ出ていない（PipeWire 1.6。読み返しの代わりにかけたい値を見せる）
+    bool hasDesiredSteady_ = false;  ///< 一定の雑音を消す強さの「かけたい値」があるか
+    double desiredSteadyDb_ = kSteadyDbDefault;
+    int appliedSteadyNodeId_ = -1;   ///< かけたい値を最後にかけたノードの id（-1 = まだ）
+    SteadyHiddenWrite hiddenSteady_; ///< 書いた値が読み返しにまだ出ていない（NsHiddenWrite と同じ）
     uint64_t requested_ = 0;      ///< 受け付けた書き込みの数
     uint64_t completed_ = 0;      ///< 終わった書き込みの数（捨てた分も含む）
 
@@ -152,7 +171,8 @@ private:
     /**
      * 書き込みを 1 つ実行する（mutex は持たずに呼ぶ）。
      * @param command 書き込み
-     * @param nodeId ノイズ除去のノードの id（SetNsParams のとき。-1 なら読んで探す）
+     * @param nodeId 強さを書くノードの id（SetNsParams なら ns_capture、SetSteadyDb なら frame_mic_denoise_capture。
+     *               -1 なら読んで探す）
      * @return 成功したら true
      */
     static bool execute(const MicCommand& command, int nodeId);

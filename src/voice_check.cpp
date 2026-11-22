@@ -236,6 +236,10 @@ bool VoiceCheck::startRecording(const MicState& settings) {
     pending_.nsParamsKnown = settings.nsParams.vadKnown && settings.nsParams.graceKnown;
     pending_.nsVad = settings.nsParams.vad;
     pending_.nsGrace = settings.nsParams.grace;
+    pending_.steadyKnown = settings.steadyKnown;
+    pending_.steady = settings.steady;
+    pending_.steadyDbKnown = settings.steadyParams.dbKnown;
+    pending_.steadyDb = settings.steadyParams.db;
     // 音の出口とマイク（履歴に「AB13X・エコー除去オフ」「AB13X のマイク（処理なし）」などと出す）
     const AudioDevices& devices = settings.devices;
     const AudioEndpoint* output = devices.findOutput(devices.defaultOutputKey);

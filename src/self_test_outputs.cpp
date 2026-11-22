@@ -166,6 +166,28 @@ void outputSelfTests(const Expect& expect) {
            earFirst.kind == OutputKind::Earphones && !earFirst.echo && !earFirst.ns);
     const OutputProfile blank;
     expect("出口の設定の既定の強さは SteamOS の値", blank.nsVad == kNsVadDefault && blank.nsGrace == kNsGraceDefault);
+    expect("初めての出口: 一定の雑音を消すはオフ・20 dB から（スピーカーもイヤホンも）",
+           !speakerFirst.steady && !earFirst.steady && speakerFirst.steadyDb == kSteadyDbDefault &&
+               earFirst.steadyDb == kSteadyDbDefault && blank.steadyDb == kSteadyDbDefault &&
+               speakerFirst.noiseMode() == NoiseMode::Off);
+    {
+        // ノイズ除去の種類（3 つから 1 つ）: 両方オンの設定は一定の雑音を消すとして扱い、選び直すと片方だけになる
+        OutputProfile both = earFirst;
+        both.ns = true;
+        both.steady = true;
+        const NoiseMode resolved = both.noiseMode();
+        both.setNoiseMode(NoiseMode::Valve);
+        const bool valve = both.ns && !both.steady;
+        both.setNoiseMode(NoiseMode::Steady);
+        expect("ノイズ除去の種類: 両方オンは一定の雑音を消す。Valve を選ぶと steady オフ、一定の雑音を消すを選ぶと ns オフ",
+               resolved == NoiseMode::Steady && valve && !both.ns && both.steady);
+        OutputProfile louder = earFirst;
+        louder.steadyDb = 30;
+        OutputProfile steadyOn = earFirst;
+        steadyOn.steady = true;
+        expect("出口の設定の比較: 一定の雑音を消すのオン・オフと強さも比べる",
+               !louder.sameSettings(earFirst) && !steadyOn.sameSettings(earFirst) && earFirst.sameSettings(earFirst));
+    }
 
     // ---- 出口の設定のかけ方（OutputSync） ----
     {
@@ -261,6 +283,54 @@ void outputSelfTests(const Expect& expect) {
                    worker.commands[0].value && !worker.commands[0].onlyIfChanged && !sync.notice().shown);
     }
     {
+        // 一定の雑音を消す: 覚えた設定が両方オン（手で書いた config.json など）なら、ns オフ・steady オンでかける。強さも渡す
+        FakeWorker worker;
+        OutputSync sync(worker.request());
+        Config config;
+        config.outputsSaved = true;
+        OutputProfile both = firstProfile(kBuiltinSpeakerKey, "Built-in Audio");
+        both.ns = true;
+        both.steady = true;
+        both.steadyDb = 27;
+        config.outputs[kBuiltinSpeakerKey] = both;
+        MicState state = stateWith(frame, true, false);
+        state.steadyKnown = true;
+        state.steadyParams.nodeKnown = state.steadyParams.dbKnown = true;
+        state.steadyParams.nodeId = 88;
+        state.steadyParams.db = 20;
+        sync.update(state, config, "2026-10-10");
+        expect("一定の雑音を消す: 両方オンの設定は ns オフ・steady オンでかけ、強さ 27 dB も渡す",
+               worker.commands.size() == 1 && worker.commands[0].kind == MicCommand::Kind::ApplySettings &&
+                   !worker.commands[0].ns && worker.commands[0].steady && worker.commands[0].steadyDb == 27 &&
+                   worker.commands[0].withNsParams);
+        expect("一定の雑音を消す: ノイズ除去の種類が変わるので知らせを出す（元に戻すとオフ）",
+               sync.notice().shown && sync.notice().previous.noiseMode() == NoiseMode::Off);
+
+        // かけ終わった（steady オン・まだ強さをかけ終えていない）: 読み返しの 20 dB は取り込まない
+        state.writesDone = worker.ticket;
+        state.steady = true;
+        state.steadyApplied = false;
+        sync.update(state, config, "2026-10-10");
+        expect("一定の雑音を消す: かけ終わる前の強さ（サービスの既定 20 dB）は取り込まない",
+               config.outputs[kBuiltinSpeakerKey].steadyDb == 27 && config.outputs[kBuiltinSpeakerKey].steady);
+        state.steadyApplied = true;
+        state.steadyParams.db = 33;
+        sync.update(state, config, "2026-10-10");
+        expect("一定の雑音を消す: かけ終わった後に変わった強さ（33 dB）は覚える",
+               config.outputs[kBuiltinSpeakerKey].steadyDb == 33);
+
+        // 外から（wpctl など）一定の雑音を消すをオフにされた → 覚える。設定が無い（再起動前）ときは覚えた値のまま
+        state.steady = false;
+        sync.update(state, config, "2026-10-10");
+        const bool adoptedOff = !config.outputs[kBuiltinSpeakerKey].steady;
+        config.outputs[kBuiltinSpeakerKey].steady = true;
+        state.steadyKnown = false;
+        state.steadyMissing = true;
+        sync.update(state, config, "2026-10-10");
+        expect("一定の雑音を消す: 外からのオフは覚え、設定が無い間は覚えた値（オン）を変えない",
+               adoptedOff && config.outputs[kBuiltinSpeakerKey].steady);
+    }
+    {
         // フィルターや仮想の出口（echo_cancel_sink など）が既定になったときは、何もかけず、今の出口も変えない
         FakeWorker worker;
         OutputSync sync(worker.request());
@@ -303,11 +373,20 @@ void outputSelfTests(const Expect& expect) {
         profile.lastUsed = "2026-10-08";
         saved.outputs[kAb13xKey] = profile;
         saved.outputs[kBuiltinSpeakerKey] = firstProfile(kBuiltinSpeakerKey, "Built-in Audio");
+        OutputProfile steadyProfile = firstProfile("bluez_output.AA_BB_CC_DD_EE_FF", "WH-1000XM4");
+        steadyProfile.steady = true;
+        steadyProfile.steadyDb = 33;
+        saved.outputs["bluez_output.AA_BB_CC_DD_EE_FF"] = steadyProfile;
         std::string error;
         std::vector<std::string> warnings;
         Config loaded;
         const bool ok = fd >= 0 && saveConfig(path, saved, error) && loadConfig(path, loaded, warnings, error);
         const auto it = loaded.outputs.find(kAb13xKey);
+        const OutputProfile& steadyLoaded = loaded.outputs["bluez_output.AA_BB_CC_DD_EE_FF"];
+        expect("設定ファイル: 一定の雑音を消す（steady_noise オン・steady_noise_db 33）を保存して読み直すと同じ",
+               ok && steadyLoaded.steady && !steadyLoaded.ns && steadyLoaded.steadyDb == 33 &&
+                   !loaded.outputs[kAb13xKey].steady && loaded.outputs[kAb13xKey].steadyDb == kSteadyDbDefault);
+        loaded.outputs.erase("bluez_output.AA_BB_CC_DD_EE_FF");
         expect("設定ファイル: 出口ごとの設定（名前の \" と日本語・強さ・最後に使った日）を保存して読み直すと同じ",
                ok && warnings.empty() && loaded.outputsSaved && loaded.outputs.size() == 2 && it != loaded.outputs.end() &&
                    it->second.name == profile.name && it->second.ns && it->second.nsVad == 12 &&
@@ -372,6 +451,20 @@ void outputSelfTests(const Expect& expect) {
         expect("設定ファイル: keep_awake が無い出口は既定（AB13X はオン、Bluetooth・スピーカーはオフ）",
                oldOk && warnings.empty() && old.outputs.size() == 3 && old.outputs[kAb13xKey].keepAwake &&
                    !old.outputs["bluez_output.AA_BB_CC_DD_EE_FF"].keepAwake && !old.outputs[kBuiltinSpeakerKey].keepAwake);
+        expect("設定ファイル: steady_noise・steady_noise_db が無い出口（前の版）は、一定の雑音を消すオフ・20 dB",
+               oldOk && !old.outputs[kAb13xKey].steady && old.outputs[kAb13xKey].steadyDb == kSteadyDbDefault &&
+                   !old.outputs[kBuiltinSpeakerKey].steady && old.outputs[kBuiltinSpeakerKey].noiseMode() == NoiseMode::Off);
+        {
+            // 範囲外の強さは丸め、両方 true は読んだまま（かけるときに一定の雑音を消すにする）
+            std::ofstream file(path, std::ios::binary | std::ios::trunc);
+            file << "{\"outputs\": {\"" << kAb13xKey << "\": {\"ns\": true, \"steady_noise\": true, \"steady_noise_db\": 99}}}\n";
+        }
+        Config odd;
+        warnings.clear();
+        const bool oddOk = loadConfig(path, odd, warnings, error);
+        expect("設定ファイル: steady_noise_db 99 は 40 に丸め、ns と steady_noise が両方 true なら一定の雑音を消す",
+               oddOk && odd.outputs[kAb13xKey].steadyDb == kSteadyDbMax &&
+                   odd.outputs[kAb13xKey].noiseMode() == NoiseMode::Steady);
         ::unlink(path);
     }
     {

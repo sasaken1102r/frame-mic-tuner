@@ -802,14 +802,17 @@ std::string monthDay(const std::string& date) {
 }
 
 /**
- * 設定のまとめ（「エコー除去オン・ノイズ除去オン」）。
+ * 設定のまとめ（「エコー除去オン・ノイズ除去オン」「エコー除去オフ・一定の雑音を消す」）。
  * @param echo エコー除去
- * @param ns ノイズ除去
+ * @param mode ノイズ除去の種類
  * @param t 言語の表
  * @return 文字列
  */
-std::string summaryText(bool echo, bool ns, const UiText& t) {
-    return std::string(echo ? t.sumEchoOn : t.sumEchoOff) + (ns ? t.sumNsOn : "");
+std::string summaryText(bool echo, NoiseMode mode, const UiText& t) {
+    std::string text = echo ? t.sumEchoOn : t.sumEchoOff;
+    if (mode == NoiseMode::Valve) text += t.sumNsOn;
+    if (mode == NoiseMode::Steady) text += t.sumSteadyOn;
+    return text;
 }
 
 /** 音の出口の一覧の 1 行（つながっている出口と、覚えているがつながっていない出口）。 */
@@ -869,6 +872,8 @@ std::string errorText(MicError error, const UiText& text) {
         case MicError::WriteNsParams: return text.errWriteNsParams;
         case MicError::WriteEcho: return text.errWriteEcho;
         case MicError::WriteNs: return text.errWriteNs;
+        case MicError::WriteSteady: return text.errWriteSteady;
+        case MicError::WriteSteadyDb: return text.errWriteSteadyDb;
         case MicError::WriteMute: return text.errWriteMute;
         case MicError::WriteMuteOn: return text.errWriteMuteOn;
         case MicError::WriteOutput: return text.errWriteOutput;
@@ -991,6 +996,7 @@ PanelHit MicPanel::hitTest(double x, double y, bool* inList) const {
 double MicPanel::trackValue(const Track& track, double x) {
     const double fraction = std::clamp((x - track.x0) / std::max(1.0, track.x1 - track.x0), 0.0, 1.0);
     const double value = track.min + (track.max - track.min) * fraction;
+    if (track.action == PanelAction::SteadySlider) return clampSteadyDb(value);
     return track.action == PanelAction::NsVadSlider ? clampNsVad(value) : clampNsGrace(value);
 }
 
@@ -1115,7 +1121,8 @@ PanelHit MicPanel::pointerDown(double x, double y, double now) {
         listStartScroll_ = listScroll_;
         return {};
     }
-    if (hit.action == PanelAction::NsVadSlider || hit.action == PanelAction::NsGraceSlider) {
+    if (hit.action == PanelAction::NsVadSlider || hit.action == PanelAction::NsGraceSlider ||
+        hit.action == PanelAction::SteadySlider) {
         // バーは押したところへ飛び、そのままドラッグ
         for (const Track& track : tracks_) {
             if (track.action != hit.action) continue;
@@ -1183,7 +1190,8 @@ bool MicPanel::scroll(double dy) {
 }
 
 bool MicPanel::tick(double now) {
-    const bool holdExpired = holdUntil_ >= 0 && now_ <= holdUntil_ && now > holdUntil_;
+    const bool holdExpired = (holdUntil_ >= 0 && now_ <= holdUntil_ && now > holdUntil_) ||
+                             (holdSteadyUntil_ >= 0 && now_ <= holdSteadyUntil_ && now > holdSteadyUntil_);
     now_ = now;
     bool changed = holdExpired;  // 書いた値の表示をやめて、読んだ値に戻す
     if (quitArmed_ && now > quitArmedUntil_) {
@@ -1222,6 +1230,16 @@ void MicPanel::holdNsValues(double vad, double grace, double until) {
     holdUntil_ = until;
 }
 
+void MicPanel::holdSteadyDb(double db, double until) {
+    holdSteadyDb_ = clampSteadyDb(db);
+    holdSteadyUntil_ = until;
+}
+
+double MicPanel::displayedSteadyDb() const {
+    if (dragAction_ == PanelAction::SteadySlider) return dragValue_;
+    return now_ <= holdSteadyUntil_ ? holdSteadyDb_ : baseSteadyDb_;
+}
+
 void MicPanel::displayedNsValues(double& vad, double& grace) const {
     const bool held = now_ <= holdUntil_;
     vad = held ? holdVad_ : baseVad_;
@@ -1239,7 +1257,9 @@ bool MicPanel::endDrag() {
 
 void MicPanel::setDragForPreview(PanelAction action, double value) {
     dragAction_ = action;
-    dragValue_ = action == PanelAction::NsVadSlider ? clampNsVad(value) : clampNsGrace(value);
+    dragValue_ = action == PanelAction::SteadySlider  ? clampSteadyDb(value)
+                 : action == PanelAction::NsVadSlider ? clampNsVad(value)
+                                                      : clampNsGrace(value);
 }
 
 void MicPanel::armQuitForPreview() {
@@ -1446,21 +1466,27 @@ void MicPanel::drawSettings(const frame_ui::Canvas& ui, const UiText& t, const C
                            : outputDisplayName(viewedKey_, endpoint != nullptr ? endpoint->name : profile.name, t);
     // 今の出口は今かかっている値、ほかの出口は覚えている値を出す
     bool echo = profile.echo;
-    bool ns = profile.ns;
+    NoiseMode mode = profile.noiseMode();
     bool known = true;
     bool nsParamsKnown = true;
+    bool steadyParamsKnown = true;
     baseVad_ = profile.nsVad;
     baseGrace_ = profile.nsGrace;
+    baseSteadyDb_ = profile.steadyDb;
     if (viewingActive_) {
         known = state.echoKnown && state.nsKnown;
         echo = state.echo;
-        ns = state.ns;
+        // 一定の雑音を消すの設定がまだ無い（Frame を再起動していない）ときは、Valve のノイズ除去だけで決める
+        mode = noiseModeOf(state.ns, state.steadyKnown && state.steady);
         const NsParams& p = state.nsParams;
         nsParamsKnown = p.nodeKnown && p.vadKnown && p.graceKnown;
         if (nsParamsKnown) {
             baseVad_ = p.vad;
             baseGrace_ = p.grace;
         }
+        const SteadyParams& sp = state.steadyParams;
+        steadyParamsKnown = sp.nodeKnown && sp.dbKnown;
+        if (steadyParamsKnown) baseSteadyDb_ = sp.db;
     }
 
     drawSelectors(ui, t, config, model);
@@ -1471,24 +1497,25 @@ void MicPanel::drawSettings(const frame_ui::Canvas& ui, const UiText& t, const C
     addButton({PanelAction::TabQuick}, tabs[0]);
     addButton({PanelAction::TabFine}, tabs[1]);
     if (external) {
-        drawExternal(ui, t, model, echo, ns, outputName);
+        drawExternal(ui, t, model, echo, mode, outputName);
     } else if (config.tab == PanelTab::Quick) {
-        drawQuick(ui, t, config, model, echo, ns, known, outputName);
+        drawQuick(ui, t, config, model, echo, mode, known, outputName);
     } else {
-        drawFine(ui, t, model, echo, ns, known, nsParamsKnown);
+        drawFine(ui, t, model, echo, mode, known, nsParamsKnown, steadyParamsKnown);
     }
     drawPipeline(ui, t, state, external);
     drawVoice(ui, t, model.voice);
 }
 
 void MicPanel::drawQuick(const frame_ui::Canvas& ui, const UiText& t, const Config& /*config*/, const PanelModel& model,
-                         bool echo, bool ns, bool known, const std::string& outputName) {
+                         bool echo, NoiseMode mode, bool known, const std::string& outputName) {
+    const bool ns = mode != NoiseMode::Off;  // プリセットはどちらもノイズ除去オフ（Valve のも、一定の雑音を消すも使わない）
     cairo_t* cr = ui.cr;
     const std::string heading = format1(t.listeningFormat, outputName);
     ui.text(kInnerX, frame_ui::centerBaseline(262, 26, 18), ui.ellipsize(heading, 18, kInnerW, true), 18, rgb(kText), true);
 
     // プリセット（ユーザーと決めたもの）: イヤホン = エコー除去オフ・ノイズ除去オフ、スピーカー = エコー除去オン・ノイズ除去オフ。
-    // 一致はこの 2 つだけで見る（バーの値はノイズ除去がオフなら効かない）
+    // 一致はこの 2 つだけで見る（バーの値はノイズ除去がオフなら効かない。一定の雑音を消すがオンなら、どちらとも一致しない）
     bool matches[2] = {known && !echo && !ns, known && echo && !ns};
     // プリセットを書き込んでいる間は、押したカードを選択中の見た目で保つ（途中の値で選択が外れない）
     if (viewingActive_ && presetHold_ != PanelAction::None && now_ <= presetHoldUntil_) {
@@ -1563,15 +1590,58 @@ void MicPanel::drawQuick(const frame_ui::Canvas& ui, const UiText& t, const Conf
     }
 }
 
-void MicPanel::drawFine(const frame_ui::Canvas& ui, const UiText& t, const PanelModel& /*model*/, bool echo, bool ns,
-                        bool known, bool nsParamsKnown) {
+void MicPanel::drawSlider(const frame_ui::Canvas& ui, double top, PanelAction action, double min, double max, double value,
+                          const std::string& title, const std::string& hint, const std::string& valueText, bool active,
+                          bool known) {
     cairo_t* cr = ui.cr;
-    // エコー除去・ノイズ除去のオン / オフ（右に 2 行までの説明）
-    for (int row = 0; row < 2; ++row) {
-        const double top = 262 + row * 68;
-        const bool isEcho = row == 0;
-        const std::string title = isEcho ? t.rowEcho : t.rowNs;
-        // 17px の 1 行に入らない見出し（フランス語・スペイン語・イタリア語のエコー除去）は、長さをそろえた 17px の 2 行にする
+    const double trackX0 = kInnerX + kSliderLabelW + 2 + 14 + 12;
+    const double trackX1 = kInnerRight - 70 - 14 - 12;
+    const double cy = top + 24;
+    const double titleSize = ui.fit(title, 17, 13, kSliderLabelW, true);
+    ui.text(kInnerX, top + 21, title, titleSize, rgb(kText), true);
+    // 説明は 12px（入らなければ 11px まで縮める）の 1 行。11px でも入らない言語は 11px の 2 行にする（下の行・標準の説明とは離れる）
+    const double hintSize = ui.fit(hint, 12, 11, kSliderLabelW);
+    if (ui.measure(hint, hintSize) <= kSliderLabelW) {
+        ui.text(kInnerX, top + 40, hint, hintSize, rgb(kTextMuted));
+    } else {
+        drawLines(ui, kInnerX, top + 37, 13, wrapText(ui, hint, 11, false, kSliderLabelW, 2), 11, kTextMuted);
+    }
+
+    // 溝・今の値までの塗り・つまみ
+    fillRounded(cr, {trackX0, cy - 3, trackX1 - trackX0, 6}, 3, kDivider);
+    const double fraction = known ? std::clamp((value - min) / (max - min), 0.0, 1.0) : 0.0;
+    const double thumbX = trackX0 + (trackX1 - trackX0) * fraction;
+    const Color fill = active ? kAccent : kTextMuted;
+    if (known && thumbX > trackX0 + 1) fillRounded(cr, {trackX0, cy - 3, thumbX - trackX0, 6}, 3, fill);
+    if (known) {
+        const bool dragged = dragAction_ == action;
+        const int l = look({trackX0 - 12, top, trackX1 - trackX0 + 24, 48});
+        const double r = dragged ? 14 : (l > 0 ? 13 : 12);
+        if (dragged && active) {
+            setColor(cr, kAccent, 0.3);
+            cairo_new_sub_path(cr);
+            cairo_arc(cr, thumbX, cy, r + 6, 0, 2 * M_PI);
+            cairo_fill(cr);
+        }
+        fillCircle(cr, thumbX, cy, r + 2, kCard);  // 塗りと見分けるための縁
+        fillCircle(cr, thumbX, cy, r, active ? kText : kTextMuted);
+    }
+    tracks_.push_back({action, trackX0, trackX1, min, max, cy});
+    if (known) addButton({action}, {trackX0 - 12, top, trackX1 - trackX0 + 24, 48});
+    ui.text(kInnerRight, frame_ui::centerBaseline(top, 48, 20), known ? valueText : std::string("--"), 20,
+            rgb(active ? kText : kTextMuted), true, true);
+}
+
+void MicPanel::drawFine(const frame_ui::Canvas& ui, const UiText& t, const PanelModel& model, bool echo, NoiseMode mode,
+                        bool known, bool nsParamsKnown, bool steadyParamsKnown) {
+    cairo_t* cr = ui.cr;
+    const MicState& state = model.state;
+
+    // エコー除去のオン / オフ（右に 2 行までの説明）
+    {
+        const double top = 256;
+        const std::string title = t.rowEcho;
+        // 17px の 1 行に入らない見出し（フランス語・スペイン語・イタリア語）は、長さをそろえた 17px の 2 行にする
         const double titleRoom = kFineToggleX - kInnerX - 8;
         const double size = ui.fit(title, frame_ui::kLabelSize, 17, titleRoom, true);
         if (ui.measure(title, size, true) <= titleRoom) {
@@ -1580,74 +1650,97 @@ void MicPanel::drawFine(const frame_ui::Canvas& ui, const UiText& t, const Panel
             const std::vector<std::string> lines = wrapBalanced(ui, title, 17, true, titleRoom);
             drawLines(ui, kInnerX, frame_ui::centerBaseline(top, 56, 17) - 10, 20, lines, 17, kText, true);
         }
-        const bool value = isEcho ? echo : ns;
         const std::vector<Rect> hits =
-            frame_ui::drawSegmented(ui, {kFineToggleX, top, kFineToggleW, 56}, {t.on, t.off}, known ? (value ? 0 : 1) : -1);
-        addButton({isEcho ? PanelAction::EchoOn : PanelAction::NsOn}, hits[0]);
-        addButton({isEcho ? PanelAction::EchoOff : PanelAction::NsOff}, hits[1]);
+            frame_ui::drawSegmented(ui, {kFineToggleX, top, kFineToggleW, 56}, {t.on, t.off}, known ? (echo ? 0 : 1) : -1);
+        addButton({PanelAction::EchoOn}, hits[0]);
+        addButton({PanelAction::EchoOff}, hits[1]);
         const double hintX = kFineToggleX + kFineToggleW + 14;
-        const std::vector<std::string> lines = wrapText(ui, isEcho ? t.echoHint : t.nsHint, 14, false, kInnerRight - hintX, 2);
+        const std::vector<std::string> lines = wrapText(ui, t.echoHint, 14, false, kInnerRight - hintX, 2);
         drawLines(ui, hintX, top + 28 - (static_cast<double>(lines.size()) - 1) * 10 + 5, 20, lines, 14, kTextMuted);
     }
 
-    // ノイズ除去の強さのバー 2 本。ノイズ除去がオフの間は効かないので、塗りとつまみを灰色にして説明を替える（押せるまま）
+    // ノイズ除去: 見出しの行（右に、使えない理由か今の種類の説明）と、3 つから選ぶ切り替え（横いっぱい）。
+    // 一定の雑音を消すは、設定がまだ無い（入れたあと Frame を再起動していない）間は押せない
+    const bool steadyDisabled = state.steadyMissing;
+    const bool steadyStopped = state.loaded && state.steadyKnown && !state.steadyParams.nodeKnown;
+    {
+        const double headTop = 322;
+        const double headH = 24;
+        const double titleSize = ui.fit(t.rowNs, 19, 15, kInnerW * 0.45, true);
+        const double titleW =
+            ui.text(kInnerX, frame_ui::centerBaseline(headTop, headH, titleSize), t.rowNs, titleSize, rgb(kText), true);
+        std::string note;
+        Color noteColor = kTextMuted;
+        if (steadyDisabled) {
+            note = t.steadyNeedsReboot;
+            noteColor = kTextSoft;
+        } else if (steadyStopped) {
+            note = t.steadyStopped;
+            noteColor = kDangerText;
+        } else if (mode == NoiseMode::Valve) {
+            note = t.nsHint;
+        }
+        if (!note.empty()) {
+            const double room = kInnerW - titleW - 16;
+            const double size = ui.fit(note, 13, 11, room);
+            ui.text(kInnerRight, frame_ui::centerBaseline(headTop, headH, size), ui.ellipsize(note, size, room), size,
+                    rgb(noteColor), false, true);
+        }
+    }
+    const Rect modeRect {kInnerX, 350, kInnerW, 56};
+    const int selected = !known ? -1 : (mode == NoiseMode::Off ? 0 : (mode == NoiseMode::Valve ? 1 : 2));
+    // 押せない「一定の雑音を消す」には、乗っている・押している見た目を付けない
+    frame_ui::Canvas modeUi = ui;
+    const Rect steadySlice {modeRect.x + modeRect.w * 2 / 3, modeRect.y, modeRect.w / 3, modeRect.h};
+    if (steadyDisabled && steadySlice.contains(ui.pointer.x, ui.pointer.y)) modeUi.pointer = {};
+    std::vector<Rect> modeHits =
+        frame_ui::drawSegmented(modeUi, modeRect, {t.off, t.nsModeValve, t.nsModeSteady}, selected);
+    if (steadyDisabled) {
+        // frame-ui の切り替えと同じ位置（枠 2px ＋ 余白 5px の内側、間 4px）の 3 つ目を、カードの色で薄くする
+        const double inset = 2 + frame_ui::kSegInset;
+        const double optionW = (modeRect.w - inset * 2 - 4 * 2) / 3;
+        const Rect option {modeRect.x + inset + (optionW + 4) * 2, modeRect.y + inset, optionW, modeRect.h - inset * 2};
+        setColor(cr, kCard, 1.0 - frame_ui::kDisabledAlpha);
+        frame_ui::roundedRect(cr, option, 24);
+        cairo_fill(cr);
+        modeHits[2] = {};
+    }
+    addButton({PanelAction::NsOff}, modeHits[0]);
+    addButton({PanelAction::NsOn}, modeHits[1]);
+    addButton({PanelAction::SteadyOn}, modeHits[2]);
+
+    if (mode == NoiseMode::Steady) {
+        // 一定の雑音を消す: 消す強さのバー 1 本と、何を残して何を下げるかの説明
+        const double db = displayedSteadyDb();
+        char text[32];
+        std::snprintf(text, sizeof(text), "%.0f dB", db);
+        drawSlider(ui, 414, PanelAction::SteadySlider, kSteadyDbMin, kSteadyDbMax, db, t.steadyDb, t.steadyDbHint, text, true,
+                   steadyParamsKnown);
+        drawLines(ui, kInnerX, 470 + 15, 20, wrapText(ui, t.steadyNote, 14, false, kInnerW, 2), 14, kTextSoft);
+
+        // 標準に戻す（20 dB）と、標準の値の説明
+        const double resetW = std::clamp(ui.measure(t.nsReset, frame_ui::kControlSize, true) + 40, 158.0, 240.0);
+        const Rect reset {kInnerRight - resetW, 514, resetW, 44};
+        const double noteSize = ui.fit(t.steadyDefaultNote, 14, 11, reset.x - kInnerX - 12);
+        ui.text(kInnerX, frame_ui::centerBaseline(reset.y, reset.h, noteSize), t.steadyDefaultNote, noteSize, rgb(kTextMuted));
+        addButton({PanelAction::SteadyReset},
+                  frame_ui::drawButton(ui, reset, t.nsReset, frame_ui::ButtonKind::Normal, steadyParamsKnown));
+        return;
+    }
+
+    // Valve のノイズ除去の強さのバー 2 本。オフの間は効かないので、塗りとつまみを灰色にして説明を替える（押せるまま）
+    const bool ns = mode == NoiseMode::Valve;
     double vad = 0.0;
     double grace = 0.0;
     displayedNsValues(vad, grace);
-    const double trackX0 = kInnerX + kSliderLabelW + 2 + 14 + 12;
-    const double trackX1 = kInnerRight - 70 - 14 - 12;
-    for (int row = 0; row < 2; ++row) {
-        const bool isVad = row == 0;
-        const double top = 404 + row * 54;
-        const double cy = top + 24;
-        const PanelAction action = isVad ? PanelAction::NsVadSlider : PanelAction::NsGraceSlider;
-        const double min = isVad ? kNsVadMin : kNsGraceMin;
-        const double max = isVad ? kNsVadMax : kNsGraceMax;
-        const double value = isVad ? vad : grace;
-        const std::string title = isVad ? t.nsVad : t.nsGrace;
-        const double titleSize = ui.fit(title, 17, 13, kSliderLabelW, true);
-        ui.text(kInnerX, top + 21, title, titleSize, rgb(kText), true);
-        const std::string hint = (!ns && isVad) ? t.nsInactive : (isVad ? t.nsVadHint : t.nsGraceHint);
-        // 説明は 12px（入らなければ 11px まで縮める）の 1 行。11px でも入らない言語は 11px の 2 行にする（下の行・標準の説明とは離れる）
-        const double hintSize = ui.fit(hint, 12, 11, kSliderLabelW);
-        if (ui.measure(hint, hintSize) <= kSliderLabelW) {
-            ui.text(kInnerX, top + 40, hint, hintSize, rgb(kTextMuted));
-        } else {
-            drawLines(ui, kInnerX, top + 37, 13, wrapText(ui, hint, 11, false, kSliderLabelW, 2), 11, kTextMuted);
-        }
-
-        // 溝・今の値までの塗り・つまみ
-        fillRounded(cr, {trackX0, cy - 3, trackX1 - trackX0, 6}, 3, kDivider);
-        const double fraction = nsParamsKnown ? std::clamp((value - min) / (max - min), 0.0, 1.0) : 0.0;
-        const double thumbX = trackX0 + (trackX1 - trackX0) * fraction;
-        const Color fill = ns ? kAccent : kTextMuted;
-        if (nsParamsKnown && thumbX > trackX0 + 1) fillRounded(cr, {trackX0, cy - 3, thumbX - trackX0, 6}, 3, fill);
-        if (nsParamsKnown) {
-            const bool dragged = dragAction_ == action;
-            const int l = look({trackX0 - 12, top, trackX1 - trackX0 + 24, 48});
-            const double r = dragged ? 14 : (l > 0 ? 13 : 12);
-            if (dragged && ns) {
-                setColor(cr, kAccent, 0.3);
-                cairo_new_sub_path(cr);
-                cairo_arc(cr, thumbX, cy, r + 6, 0, 2 * M_PI);
-                cairo_fill(cr);
-            }
-            fillCircle(cr, thumbX, cy, r + 2, kCard);  // 塗りと見分けるための縁
-            fillCircle(cr, thumbX, cy, r, ns ? kText : kTextMuted);
-        }
-        tracks_.push_back({action, trackX0, trackX1, min, max, cy});
-        if (nsParamsKnown) addButton({action}, {trackX0 - 12, top, trackX1 - trackX0 + 24, 48});
-
-        char text[32];
-        if (!nsParamsKnown) {
-            std::snprintf(text, sizeof(text), "--");
-        } else if (isVad) {
-            std::snprintf(text, sizeof(text), "%.0f%%", value);
-        } else {
-            std::snprintf(text, sizeof(text), "%.0fms", value);
-        }
-        ui.text(kInnerRight, frame_ui::centerBaseline(top, 48, 20), text, 20, rgb(ns ? kText : kTextMuted), true, true);
-    }
+    char vadText[32];
+    std::snprintf(vadText, sizeof(vadText), "%.0f%%", vad);
+    char graceText[32];
+    std::snprintf(graceText, sizeof(graceText), "%.0fms", grace);
+    drawSlider(ui, 414, PanelAction::NsVadSlider, kNsVadMin, kNsVadMax, vad, t.nsVad, ns ? t.nsVadHint : t.nsInactive,
+               vadText, ns, nsParamsKnown);
+    drawSlider(ui, 466, PanelAction::NsGraceSlider, kNsGraceMin, kNsGraceMax, grace, t.nsGrace, t.nsGraceHint, graceText, ns,
+               nsParamsKnown);
 
     // 標準に戻す（SteamOS の既定 23% / 500ms）と、標準の値の説明
     // ボタンは幅 158。文字が入らない言語（スペイン語など）だけ、入る幅（240 まで）に広げる
@@ -1658,7 +1751,7 @@ void MicPanel::drawFine(const frame_ui::Canvas& ui, const UiText& t, const Panel
     addButton({PanelAction::NsReset}, frame_ui::drawButton(ui, reset, t.nsReset, frame_ui::ButtonKind::Normal, nsParamsKnown));
 }
 
-void MicPanel::drawExternal(const frame_ui::Canvas& ui, const UiText& t, const PanelModel& model, bool echo, bool ns,
+void MicPanel::drawExternal(const frame_ui::Canvas& ui, const UiText& t, const PanelModel& model, bool echo, NoiseMode mode,
                             const std::string& outputName) {
     const AudioDevices& devices = model.state.devices;
     const AudioEndpoint* input = devices.findInput(devices.defaultInputKey);
@@ -1668,7 +1761,7 @@ void MicPanel::drawExternal(const frame_ui::Canvas& ui, const UiText& t, const P
     ui.text(kInnerX, 268 + 23, ui.ellipsize(now, size, kInnerW, true), size, rgb(kText), true);
     drawLines(ui, kInnerX, 306 + 19, 26, wrapText(ui, t.externalExplain, 16, false, kInnerW, 3), 16, kTextSoft);
     drawLines(ui, kInnerX, 392 + 15, 21,
-              wrapText(ui, format2(t.externalSavedFormat, outputName, summaryText(echo, ns, t)), 14, false, kInnerW, 2), 14,
+              wrapText(ui, format2(t.externalSavedFormat, outputName, summaryText(echo, mode, t)), 14, false, kInnerW, 2), 14,
               kTextMuted);
     // 内蔵マイクに戻す（内蔵マイクが一覧にあるときだけ押せる）
     bool builtinAvailable = false;
@@ -1698,40 +1791,60 @@ void MicPanel::drawPipeline(const frame_ui::Canvas& ui, const UiText& t, const M
         ui.text(box.right() - 14, labelBaseline, ui.ellipsize(note, size, room), size, rgb(kTextMuted), false, true);
     }
 
-    // 5 つの段: マイク ─ 音質補正 ─ エコー除去 ─ ノイズ除去 ─ アプリへ。通っている段だけピンク
+    // 5 つの段: マイク ─ 音質補正 ─ エコー除去 ─ ノイズ除去 ─ アプリへ。通っている段だけピンク。
+    // ノイズ除去の段は、Valve のノイズ除去と一定の雑音を消すの通っている方（両方通っていれば 2 つ並べて 6 段。
+    // どちらも通っていなければ、選んでいる種類の名前を点線で）
     std::string micLabel = t.stageMic;
     if (external) {
         const AudioEndpoint* input = state.devices.findInput(state.devices.defaultInputKey);
         micLabel = shortDeviceName(input != nullptr ? input->name : state.devices.defaultInputKey);
     }
-    const std::string labels[5] = {micLabel, t.stageEq, t.stageEcho, t.stageNs, t.stageOut};
-    bool active[5] = {external || state.linksKnown, false, false, false, external || state.linksKnown};
+    const bool ends = external || state.linksKnown;
+    bool eqOn = false;
+    bool echoOn = false;
+    bool nsOn = false;
+    bool steadyOn = false;
     if (!external) {
         for (const ChainStage& stage : state.chain) {
-            if (stage.kind == ChainStage::Kind::Eq) active[1] = true;
-            if (stage.kind == ChainStage::Kind::EchoCancel) active[2] = true;
-            if (stage.kind == ChainStage::Kind::NoiseSuppression) active[3] = true;
+            if (stage.kind == ChainStage::Kind::Eq) eqOn = true;
+            if (stage.kind == ChainStage::Kind::EchoCancel) echoOn = true;
+            if (stage.kind == ChainStage::Kind::NoiseSuppression) nsOn = true;
+            if (stage.kind == ChainStage::Kind::SteadyNoise) steadyOn = true;
         }
     }
+    std::vector<std::string> labels = {micLabel, t.stageEq, t.stageEcho};
+    std::vector<bool> active = {ends, eqOn, echoOn};
+    const bool steadyChosen = state.steadyKnown && state.steady;
+    if (nsOn || (!steadyOn && !steadyChosen)) {
+        labels.push_back(t.stageNs);
+        active.push_back(nsOn);
+    }
+    if (steadyOn || (!nsOn && steadyChosen)) {
+        labels.push_back(t.stageSteady);
+        active.push_back(steadyOn);
+    }
+    labels.push_back(t.stageOut);
+    active.push_back(ends);
+    const int count = static_cast<int>(labels.size());
     const double inner = box.w - 28;
     const double minWire = 6;
     double size = 15;
-    double widths[5];
+    std::vector<double> widths(labels.size(), 0.0);
     double total = 0;
     for (; size >= 11; size -= 1) {
         total = 0;
-        for (int i = 0; i < 5; ++i) {
+        for (int i = 0; i < count; ++i) {
             widths[i] = ui.measure(labels[i], size, active[i]) + 24;
             total += widths[i];
         }
-        if (total + 4 * minWire <= inner) break;
+        if (total + (count - 1) * minWire <= inner) break;
     }
-    const double wire = std::max(minWire, (inner - total) / 4);
+    const double wire = std::max(minWire, (inner - total) / (count - 1));
     const double nodeH = 36;
     const double top = box.y + 8 + 19 + 6;
     const double cy = top + nodeH / 2;
     double x = box.x + 14;
-    for (int i = 0; i < 5; ++i) {
+    for (int i = 0; i < count; ++i) {
         const Rect node {x, top, widths[i], nodeH};
         if (active[i]) {
             fillRounded(cr, node, nodeH / 2, kAccentTint);
@@ -1742,7 +1855,7 @@ void MicPanel::drawPipeline(const frame_ui::Canvas& ui, const UiText& t, const M
         ui.text(node.x + 12, frame_ui::centerBaseline(node.y, node.h, size), labels[i], size,
                 rgb(active[i] ? kText : kTextMuted), active[i]);
         x += widths[i];
-        if (i == 4) break;
+        if (i == count - 1) break;
         // 段と段の線: 両側が通っていればピンクの実線、ほかは点線
         const bool on = active[i] && active[i + 1];
         setColor(cr, on ? kAccent : kBorder);
@@ -1865,10 +1978,16 @@ void MicPanel::drawVoice(const frame_ui::Canvas& ui, const UiText& t, const Voic
         } else if (!clip.echoKnown) {
             label = t.unknownSetting;
         } else {
-            label = summaryText(clip.echo, clip.nsKnown && clip.ns, t);
-            if (clip.nsKnown && clip.ns && clip.nsParamsKnown) {
+            const NoiseMode mode = noiseModeOf(clip.nsKnown && clip.ns, clip.steadyKnown && clip.steady);
+            label = summaryText(clip.echo, mode, t);
+            if (mode == NoiseMode::Valve && clip.nsParamsKnown) {
                 char numbers[32];
                 std::snprintf(numbers, sizeof(numbers), " %.0f%%/%.0fms", clip.nsVad, clip.nsGrace);
+                label += numbers;
+            }
+            if (mode == NoiseMode::Steady && clip.steadyDbKnown) {
+                char numbers[32];
+                std::snprintf(numbers, sizeof(numbers), " %.0fdB", clip.steadyDb);
                 label += numbers;
             }
             if (clip.outputKnown) {
@@ -2536,7 +2655,7 @@ void MicPanel::drawOutputPicker(const frame_ui::Canvas& ui, const UiText& t, con
         // 左: 絵・名前（設定を表示中の札）・状態（前に使った出口は絵と名前を少し薄く）
         const double cy = y + kRowH / 2;
         const double nameX = row.x + 14 + 44 + 14;
-        const std::string summary = summaryText(e.profile.echo, e.profile.ns, t);
+        const std::string summary = summaryText(e.profile.echo, e.profile.noiseMode(), t);
         const double summaryRight = button.x - keepGroupW - 20;
         // 要約は 14px の 1 行。名前に 220 を残せないときは 13px の 2 行にする
         const double summaryRoom = summaryRight - nameX - 220;

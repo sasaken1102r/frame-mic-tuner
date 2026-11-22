@@ -17,9 +17,16 @@
 --   （20261015 より前と同じ）。本体と予備を両方入れると、自動音量調整が 2 回かかってマイクの声が大きくなりすぎる
 -- エコー除去の予備が無い SteamOS（20261015 より前）では、0.3.3 までと同じく、名前の頭で見分けて全部の段を入れる
 -- （そのころの Valve の tracker も、マイクを使うアプリがいれば全部入れていた）
+-- - 「一定の雑音を消す」（Frame Mic Tuner のノイズ除去。frame-mic-denoise.conf を別プロセスで動かす）も、
+--   frame-mic.steady-noise でオン・オフする。並びはいつもアプリ寄りの最後（エコー除去・Valve のノイズ除去の後ろ）。
+--   WirePlumber は新しく来たフィルターを、ほかのフィルターの filter.smart.after に名前が無いかぎりマイク寄りに置くので、
+--   Valve のマイクのフィルターの after に名前を足す（filters メタデータ。Valve の設定ファイルは書き換えない）
 
 local BUILTIN_SOURCE = "alsa_input.platform-sound.HiFi__Mic__source"
 local BUILTIN_SOURCE_LOOPBACK = "alsa_loopback_device." .. BUILTIN_SOURCE
+-- 「一定の雑音を消す」のノードと smart filter の名前（contrib/denoise/frame-mic-denoise.conf）
+local DENOISE_SOURCE = "frame_mic_denoise_source"
+local DENOISE_FILTER = "frame-mic-tuner-denoise"
 
 local state = {
   stream_count = 0,
@@ -60,6 +67,7 @@ local RULES = {
   echo_cancel_source = { use = builtin_source, key = "frame-mic.echo-cancel" },
   echo_cancel_sink = { use = builtin_source, key = "frame-mic.echo-cancel" },
   ns_source = { use = builtin_source, key = "frame-mic.noise-suppression" },
+  [DENOISE_SOURCE] = { use = builtin_source, key = "frame-mic.steady-noise" },
 }
 
 -- 予備が無いときの決まり（0.3.3 まで）: ノード名の頭から、どの設定でオン・オフするかを決める
@@ -71,7 +79,41 @@ local function legacy_setting_for (name)
   if name:find ("^ns_") or name:find ("^dsp_") then
     return "frame-mic.noise-suppression"
   end
+  if name == DENOISE_SOURCE then
+    return "frame-mic.steady-noise"
+  end
   return nil
+end
+
+-- Valve のマイク側のフィルター（Audio/Source）の filter.smart.after に、「一定の雑音を消す」の名前を足す。
+-- 足した値がもう書いてあれば何もしない（書くたびに WirePlumber がつなぎ直すので）
+local function put_denoise_last (metadata, node)
+  local name = node.properties ["node.name"] or ""
+  if name == DENOISE_SOURCE or node.properties ["media.class"] ~= "Audio/Source" then
+    return
+  end
+  local node_id = node.properties ["object.id"]
+  local names = {}
+  local original = node.properties ["filter.smart.after"]
+  if original ~= nil then
+    local parsed = Json.Raw (original):parse ()
+    if type (parsed) == "table" then
+      for _, v in ipairs (parsed) do
+        if v ~= DENOISE_FILTER then
+          table.insert (names, v)
+        end
+      end
+    end
+  end
+  table.insert (names, DENOISE_FILTER)
+  local quoted = {}
+  for _, v in ipairs (names) do
+    table.insert (quoted, '"' .. v .. '"')
+  end
+  local value = "[ " .. table.concat (quoted, ", ") .. " ]"
+  if metadata:find (node_id, "filter.smart.after") ~= value then
+    metadata:set (node_id, "filter.smart.after", "Spa:String:JSON", value)
+  end
 end
 
 -- 既定の名前（{ "name": "..." }）。無ければ ""
@@ -112,6 +154,7 @@ local function apply_node (metadata, node)
     local key = legacy_setting_for (name)
     enabled = state.stream_count > 0 and (key == nil or Settings.get_boolean (key))
   end
+  put_denoise_last (metadata, node)
   metadata:set (node_id, "filter.smart.disabled", "Spa:String:JSON",
       enabled and "false" or "true")
 end
