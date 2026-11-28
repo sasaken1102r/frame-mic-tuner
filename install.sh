@@ -62,7 +62,8 @@ if [[ $uninstall -eq 1 ]]; then
     # Stop and disable the service, and quit an instance started from the dashboard (+), if any.
     systemctl --user disable --now "$unit" 2>/dev/null || true
     pkill -TERM -x frame-mic-tuner 2>/dev/null || true
-    # The steady-noise remover's own PipeWire process (stopping it only takes that filter out of the mic)
+    # The mic filters' own PipeWire process (stopping it only takes these filters out of the mic; with auto gain
+    # off, the WirePlumber script goes back to Valve's echo canceller)
     systemctl --user disable --now "$denoise_unit" 2>/dev/null || true
     rm -f "$bin" "$desktop" "$unit_dir/$unit" "$wp_script" "$wp_conf" "$update_script"
     rm -f "$unit_dir/$denoise_unit" "$denoise_plugin" "$denoise_conf"
@@ -77,10 +78,11 @@ if [[ $uninstall -eq 1 ]]; then
     fi
     if [[ $purge -eq 1 ]]; then
         rm -rf "$app_config"
-        # Forget the saved switch values. Only these two keys; nothing else in WirePlumber changes.
+        # Forget the saved switch values. Only these keys; nothing else in WirePlumber changes.
         wpctl settings --delete frame-mic.echo-cancel >/dev/null 2>&1 || true
         wpctl settings --delete frame-mic.noise-suppression >/dev/null 2>&1 || true
         wpctl settings --delete frame-mic.steady-noise >/dev/null 2>&1 || true
+        wpctl settings --delete frame-mic.auto-gain >/dev/null 2>&1 || true
         echo "Removed Frame Mic Tuner, its settings and the saved frame-mic.* values."
     else
         echo "Removed Frame Mic Tuner. Its settings are kept in $app_config (add --purge to delete them)."
@@ -178,9 +180,11 @@ install_if_changed "$tmp" "$wp_script"
 sed "s|@SCRIPT_PATH@|$wp_script|" contrib/wireplumber/90-frame-mic.conf > "$tmp"
 install_if_changed "$tmp" "$wp_conf"
 
-# The steady-noise remover. It runs all the time as its own small PipeWire process and is only put into the
-# mic's path while the setting frame-mic.steady-noise is on (the WirePlumber script above decides that).
-# Restarting this process is safe: only this filter leaves the mic for a moment; PipeWire itself keeps running.
+# The mic filters' own PipeWire process: the steady-noise remover and an echo canceller without auto gain.
+# It runs all the time and its filters are only put into the mic's path when the settings ask for them
+# (frame-mic.steady-noise, and frame-mic.auto-gain off; the WirePlumber script above decides that).
+# Restarting this process is safe: only these filters leave the mic for a moment (Valve's echo canceller takes
+# over meanwhile); PipeWire itself keeps running.
 denoise_changed=0
 if [[ ! -f "$denoise_plugin" ]] || ! cmp -s "$built_plugin" "$denoise_plugin"; then
     mkdir -p "$(dirname "$denoise_plugin")"
@@ -200,10 +204,10 @@ if [[ ! -f "$unit_dir/$denoise_unit" ]] || ! cmp -s "contrib/denoise/$denoise_un
     denoise_changed=1
 fi
 systemctl --user enable "$denoise_unit" >/dev/null 2>&1 || true
-# Start it now only if the running WirePlumber already has this version's script (it defines frame-mic.steady-noise).
+# Start it now only if the running WirePlumber already has this version's script (it defines frame-mic.auto-gain).
 # Before the headset restart, the old script or SteamOS's own tracker decides about the filters, and it could put
-# this filter into the mic without being asked. After the restart the service starts with PipeWire.
-if wpctl settings frame-mic.steady-noise 2>/dev/null | grep -q '^Value:'; then
+# these filters into the mic without being asked. After the restart the service starts with PipeWire.
+if wpctl settings frame-mic.auto-gain 2>/dev/null | grep -q '^Value:'; then
     if [[ $denoise_changed -eq 1 ]] && systemctl --user is-active --quiet "$denoise_unit"; then
         systemctl --user restart "$denoise_unit" || true
     else
@@ -234,7 +238,7 @@ Frame Mic Tuner is installed:
   $bin
   $desktop
   $unit_dir/$unit (start with SteamVR: ${autostart_state:-unknown}; switch it in the panel)
-  $unit_dir/$denoise_unit (steady-noise remover: ${denoise_state:-unknown})
+  $unit_dir/$denoise_unit (steady-noise remover and echo canceller without auto gain: ${denoise_state:-unknown})
 Open it from the SteamVR dashboard: + (launch a program) > Frame Mic Tuner, then the "Mic" icon.
 EOF
 if pgrep -x frame-mic-tuner >/dev/null 2>&1; then

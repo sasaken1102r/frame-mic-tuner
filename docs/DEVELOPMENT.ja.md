@@ -5,7 +5,7 @@
 Steam Frame（aarch64 SteamOS）で、マイクの**エコー除去**と**ノイズ除去**を SteamVR のダッシュボードから切り替えるパネル。
 ヘッドセットを被ったまま、イヤホンのときはエコー除去を切って小さな音まで入れ、スピーカーのときはエコー除去を入れてスピーカーの音の回り込みを消す。
 
-- 切り替えの仕組み（WirePlumber のスクリプト）は `contrib/wireplumber/`（下の「切り替えの仕組み」）。アプリはその設定 `frame-mic.echo-cancel`・`frame-mic.noise-suppression`・`frame-mic.steady-noise` を `wpctl settings --save` で書き換える
+- 切り替えの仕組み（WirePlumber のスクリプト）は `contrib/wireplumber/`（下の「切り替えの仕組み」）。アプリはその設定 `frame-mic.echo-cancel`・`frame-mic.auto-gain`・`frame-mic.noise-suppression`・`frame-mic.steady-noise` を `wpctl settings --save` で書き換える
 - 「一定の雑音を消す」（息やささやき声を残すノイズ除去）は、このアプリの LADSPA プラグインを別の PipeWire のプロセスで動かす（`src/denoise/`・`contrib/denoise/`。下の「一定の雑音を消す」）
 - ダッシュボードのオーバーレイ、Vulkan での画像の送り方、終了処理、＋への登録、二重起動の扱いは、同じ作者の Steam Frame 向けオーバーレイ（未公開）と同じ作り
 
@@ -14,7 +14,7 @@ Steam Frame（aarch64 SteamOS）で、マイクの**エコー除去**と**ノイ
 ```
 alsa_input.platform-sound.HiFi__Mic__source（2ch、デジタルマイク 2 個）
  → eq_capture / eq_source（EQ: 音質補正 ＋ 2ch→1ch）
- → echo_cancel_capture / echo_cancel_source（WebRTC のエコー除去＋自動音量調整。Valve の元の動きでは、出力が Frame のスピーカー以外のときは予備の echo_cancel_fallback_capture / echo_cancel_fallback_source。このアプリの tracker は予備を使わない）
+ → echo_cancel_capture / echo_cancel_source（WebRTC のエコー除去＋自動音量調整。Valve の元の動きでは、出力が Frame のスピーカー以外のときは予備の echo_cancel_fallback_capture / echo_cancel_fallback_source。このアプリの tracker は予備を使わない。自動音量調整をオフにしたときは、代わりにこのアプリの frame_mic_ec_capture / frame_mic_ec_source）
  → ns_capture / ns_source（ノイズ除去: 声らしさで判定して、声でない音を消す）
  → frame_mic_denoise_capture / frame_mic_denoise_source（一定の雑音を消す。このアプリのもの。いつもアプリ寄りの最後）
  → alsa_loopback_stream → alsa_loopback_device...HiFi__Mic__source（既定のマイク。アプリはここから録る）
@@ -37,9 +37,9 @@ alsa_input.platform-sound.HiFi__Mic__source（2ch、デジタルマイク 2 個�
 | `contrib/denoise/frame-mic-tuner-denoise.service` | `~/.config/systemd/user/frame-mic-tuner-denoise.service`（`pipewire -c` で上の設定を動かす。`WantedBy=pipewire.service`・`BindsTo=pipewire.service`。install.sh が enable して起動する） |
 | （ビルドしたもの）`frame-mic-denoise.so` | `~/.local/lib/frame-mic-tuner/frame-mic-denoise.so`（LADSPA プラグイン。リリースの tar.gz にも入る） |
 
-- `90-frame-mic.conf`: Valve の tracker（`steamos.microphone-tracker`）を `disabled` にして、自作の `frame-mic-tracker.lua` を読み込む。設定 `frame-mic.echo-cancel`（既定 true）・`frame-mic.noise-suppression`（既定 false）・`frame-mic.steady-noise`（既定 false。0.4.0 から）を定義する
+- `90-frame-mic.conf`: Valve の tracker（`steamos.microphone-tracker`）を `disabled` にして、自作の `frame-mic-tracker.lua` を読み込む。設定 `frame-mic.echo-cancel`（既定 true）・`frame-mic.noise-suppression`（既定 false）・`frame-mic.steady-noise`（既定 false。0.4.0 から）・`frame-mic.auto-gain`（既定 true。下の「エコー除去の自動音量調整」）を定義する
 - `frame-mic.steady-noise`: `frame_mic_denoise_source` を、`frame-mic.noise-suppression` と同じ決まり（録音のストリームがいて、既定のマイクが内蔵のとき）で入れる。入れたあと再起動するまでは、WirePlumber は前の `90-frame-mic.conf` のままなので、`wpctl settings frame-mic.steady-noise` は「not found」。アプリはこのときだけは「切り替えの仕組みが入っていない」の失敗にせず、「一定の雑音を消す」を灰色にして「Frame を再起動すると使えます」と出す
-- 並び（一定の雑音を消すを、アプリ寄りの最後に置く）: WirePlumber は smart filter を `/usr/share/wireplumber/scripts/lib/filter-utils.lua` の `insertFilterSorted` で並べる。リストの先頭がアプリ寄りで、新しく来たフィルターは、すでにあるフィルターの `filter.smart.after` に自分の名前が書いてあるときだけ、そのフィルターより前（アプリ寄り）に入る。そうでなければマイク寄りに入る。新しいフィルター自身の `filter.smart.before` / `after` では動かせない（Valve の EQ とノイズ除去の前後も、もともと読み込みの順番しだい）。そこで tracker は、Valve のマイク側のフィルター（`Audio/Source` の `eq_source`・`echo_cancel_source`・`ns_source` など）の `filter.smart.after` に、`filters` メタデータで `frame-mic-tuner-denoise`（`filter.smart.name`）を足す（`put_denoise_last`。値が同じなら書かない。書くたびに WirePlumber がつなぎ直すため）。Valve の設定ファイルには触らない
+- 並び（一定の雑音を消すを、アプリ寄りの最後に置く）: WirePlumber は smart filter を `/usr/share/wireplumber/scripts/lib/filter-utils.lua` の `insertFilterSorted` で並べる。リストの先頭がアプリ寄りで、新しく来たフィルターは、すでにあるフィルターの `filter.smart.after` に自分の名前が書いてあるときだけ、そのフィルターより前（アプリ寄り）に入る。そうでなければマイク寄りに入る。新しいフィルター自身の `filter.smart.before` / `after` では動かせない（Valve の EQ とノイズ除去の前後も、もともと読み込みの順番しだい）。そこで tracker は、Valve のマイク側のフィルター（`Audio/Source` の `eq_source`・`echo_cancel_source`・`ns_source` など）の `filter.smart.after` に、`filters` メタデータで `frame-mic-tuner-denoise`（`filter.smart.name`）を足す。`eq_source` にはさらに自動音量調整なしのエコー除去の `frame-mic-tuner-ec-source` も足して、EQ よりアプリ寄りに入れる（`put_own_filters`。値が同じなら書かない。書くたびに WirePlumber がつなぎ直すため）。Valve の設定ファイルには触らない
 - 一定の雑音を消すのノードにも `steamos.mic_filter = true` を付けてある。Valve のフィルターと同じく、アプリ（Steam のマイクの一覧など）からは見えず、tracker が受け持つ
 - `frame-mic-tracker.lua`: 録音のストリームがいる間だけ段を入れるのは元と同じ。予備が無い 20261007 までは、0.3.3 までと全く同じ（名前の頭で見分けて、EQ はいつも、`echo_cancel*` と `ns_*`・`dsp_*` は設定どおりに入れる。既定のマイク・出力は見ない）。予備があるときの Valve との違いは 4 つ
   - エコー除去（`echo_cancel_*`）とノイズ除去（`ns_source`）を、それぞれ設定で切れる。設定を変えると、使用中のマイクにもその場で反映する（PipeWire の再起動は要らない。録音中に切り替えても音は途切れない）
@@ -63,6 +63,7 @@ wpctl settings --save frame-mic.echo-cancel false        # エコー除去を切
 wpctl settings --save frame-mic.echo-cancel true         # エコー除去を入れる（スピーカー）
 wpctl settings --save frame-mic.noise-suppression true   # ノイズ除去を入れる
 wpctl settings --save frame-mic.steady-noise true        # 一定の雑音を消すを入れる（ノイズ除去とはどちらか 1 つにする。両方オンならアプリは一定の雑音を消すとして扱う）
+wpctl settings --save frame-mic.auto-gain false          # エコー除去を自動音量調整なしの方にする（エコー除去がオンのときだけ効く）
 wpctl settings frame-mic.echo-cancel                     # 今の値（Value: true (Saved: true)）
 ```
 
@@ -86,11 +87,11 @@ SteamVR のダッシュボードの下の並びに「Mic」のアイコン（マ
 | タブ（左のカードの上） | **かんたん** / **細かく調整** | 左のカードの中身を切り替える（frame-ui の切り替え）。最後に見ていたタブを `config.json` の `tab` に保存し、次に開いたときもそのタブ。バーのドラッグ中にタブを切り替えた・パネルを閉じたときは、先にドラッグを終わらせて最後の値を送って保存する。外付けのマイクを使っている間は薄くして押せない |
 | 「<出口> で聞いているとき」（かんたんのタブ、プリセット） | **イヤホン・ヘッドホン** / **Frame のスピーカー** | 設定をまとめて切り替えるプリセット。イヤホン = エコー除去オフ・ノイズ除去オフ、スピーカー = エコー除去オン・ノイズ除去オフ。表示している出口が今の出口なら、1 つのコマンド（出口の設定をまとめてかける `ApplySettings`）としてワーカーに渡し、`wpctl settings --save` をエコー除去 → ノイズ除去の順に 2 回書いてから 1 回だけ読み直す。途中の値で選択が外れないよう、書き終わるまで（最長 8 秒）押したカードを選択中の見た目で保つ。片方が失敗しても、もう片方は書き、「エコー除去の切り替えに失敗（wpctl）」「ノイズ除去の切り替えに失敗（wpctl）」のどちらか（両方なら「切り替えに失敗（wpctl）」）を赤で出す。どちらの場合も、表示している出口の設定として覚える（今の出口でなければ覚えるだけで、かけない）。ノイズ除去の強さは変えない。各カードに、押すと何になるかの札 2 つ。今の設定と一致するカードが選択中（✓ の丸・ピンクの塗り）。一致はエコー除去とノイズ除去の 2 つだけで見る |
 | プリセットの下の 1 行 | **元に戻す**（知らせのときだけ） | ふだんは「<出口> のときは、いつもこの設定になります。つないだら自動で切り替えます」（どちらとも一致しなければ「いまは「細かく調整」の設定を使っています」）。出口が変わって自動で設定をかけたあとは、ピンクの枠の知らせ「<出口> をつないだので、覚えていた設定にしました」と **元に戻す**（切り替える前にかかっていた値をかけ、その出口の設定として覚え直す）。知らせは、設定を手で変えた・別の出口を表示した・また出口が変わったときに消える |
-| エコー除去（細かく調整のタブ） | オン / オフ | `frame-mic.echo-cancel`（今の出口なら書いて、表示している出口の設定として覚える） |
+| エコー除去（細かく調整のタブ） | オン / オフ | `frame-mic.echo-cancel`（今の出口なら書いて、表示している出口の設定として覚える）。右に自動音量のオン / オフ。2 つの切り替えの下に「自動音量はエコー除去の中にあるので、エコー除去がオンのときだけ働きます」（12px、10px まで縮める） |
 | ノイズ除去（細かく調整のタブ） | オン / オフ | `frame-mic.noise-suppression`。オンにすると小さい音（口の音など）は消える |
 | 判定の厳しさ / 余韻（細かく調整のタブ） | バー（ドラッグ）、標準に戻す | ノイズ除去の強さ（下の「ノイズ除去の強さ」）。見本に合わせて − / ＋ はやめ、バーだけにした（押したところへ飛び、そのままドラッグ）。ノイズ除去がオフの間は塗りとつまみと値を灰色にし、1 本目の説明を「オフの間は効きません」に（押せるまま。見出しは文字のコントラストを保つため薄くしない）。「標準に戻す」はバーの下の行に、「標準は 23%・500ms（SteamOS の値）」と一緒に置く |
 | 外付けのマイクのとき（タブの中身の代わり） | **Frame 内蔵マイクに戻す** | 「いまは <マイク> を使っています」、処理がかかるのは内蔵マイクだけという説明、「<出口> のときの設定（<まとめ>）は、内蔵マイクに戻すと使います」。ボタンは内蔵マイクを既定のマイクにする（下の「既定の切り替え」） |
-| つながり（左のカードの下の暗い箱） | （表示だけ） | 「マイク ─ 音質補正 ─ エコー除去 ─ ノイズ除去 ─ アプリへ」。実際に通っている段はピンクの薄い塗り＋実線の枠＋太字、通っていない段は点線の枠＋細字。段と段の線は、両側が通っていればピンクの実線、ほかは点線（見本のとおり。前の「下を回って飛ばす線」はやめた）。外付けのマイクのときは最初の段をそのマイクの短い名前にして、処理の段はすべて通っていない形。未使用・読めないときは「つながり」の右に説明 |
+| つながり（左のカードの下の暗い箱） | （表示だけ） | 「マイク ─ 音質補正 ─ エコー除去 ─ ノイズ除去 ─ アプリへ」。実際に通っている段はピンクの薄い塗り＋実線の枠＋太字、通っていない段は点線の枠＋細字。段と段の線は、両側が通っていればピンクの実線、ほかは点線（見本のとおり。前の「下を回って飛ばす線」はやめた）。左から右は通る順なので、自動音量は横に並べず、エコー除去の段の真下に短い縦の線でつないだ小さな札（段より 3px 小さい字）で出す（同じ段の中のもの）。Valve のエコー除去（自動音量調整あり）が通っていればピンクの薄い塗り＋実線の枠＋太字、自動音量調整なしの方が通っているか、エコー除去が通っていなければ点線の枠＋細字。外付けのマイクのときは最初の段をそのマイクの短い名前にして、処理の段はすべて通っていない形。未使用・読めないときは「つながり」の右に説明 |
 | 声のチェック | ● 録音 / ■ 停止、履歴の ▶ / ■ | アプリに届く音を最大 10 秒録って、5 件まで聞き比べる（下の「声のチェック」）。履歴の 2 行目は録ったときの出口と設定（「AB13X・エコー除去オフ」「スピーカー・エコー除去オン・ノイズ除去オン 10%/800ms」）か、外付けのマイクなら「AB13X のマイク（処理なし）」 |
 | 下の 1 行（このアプリで描く。frame-ui の `drawFooter` は 3 言語なので使わない） | 言語の一覧（日本語 / English / 简体中文 / Deutsch / Français / Español / Italiano）、SteamVR と一緒に起動 オン / オフ、終了 | 言語は一覧で選ぶとすぐ切り替えて保存。自動起動は `systemctl --user enable` / `disable`（下の「自動起動」。ユニットが無いときは押せず「準備されていません」）。終了は 3 秒以内の 2 回目で終了（終了コード 3）。いちばん下の注意書きは、失敗（赤）があればそれ、無ければ自動起動が使えない理由、どちらも無ければ「押すとすぐ切り替わり、音の出口ごとに覚えます。録音はメモリの中だけで、終了すると消えます」 |
 
@@ -116,7 +117,7 @@ SteamVR のダッシュボードの下の並びに「Mic」のアイコン（マ
 - 見出し（y 24〜76）: 「マイク」32px 太字（x 28）・状態ラベル（140, 28, 168×44）・ミュートのボタン（324, 22, 220×56）・右に「アプリと更新」（1164, 22, 208×56。幅 208 では文字が 16px に入らない言語は、右端 1372 のまま入る幅まで左へ広げる）。見出しは幅 100 に入るまで 22px まで縮め、それでも入らない言語（スペイン語・イタリア語）は状態ラベルとミュートのボタンを見出しの後ろ（間 12）へずらす
 - マイクの設定の画面:
   - 上の段（y 92、高さ 60）: 音の出口の欄（x 28・幅 432）とマイクの欄（x 472・幅 216。右端は左のカードと同じ 688）。地はカードの色に 2px の枠、角丸 18
-  - 左のカード（28, 168, 660×492）: タブ（50, 188, 616×56）→ かんたん（見出し 18px（y 262）→ プリセット 2 枚（y 296・402、616×96、角丸 16。左に 44px の絵、名前 22px 太字、効果 15px（1 行に入らない言語は 14px の 2 行にして名前を 8px 上げる）、右に札 2 つ 13px）→ y 502〜558 に説明 14px（2 行）か知らせ（ピンクの 2px の枠、56px、右に「元に戻す」44px））/ 細かく調整（エコー除去・ノイズ除去の行 y 262・330（見出し 20px（17px まで縮めて入らなければ 17px の 2 行）・切り替え 250, 210×56・説明 14px 2 行（x 474 から））→ バー y 404・458（見出し 17px・説明 12px（幅 170。11px まで縮めて入らなければ 11px の 2 行）・溝 6px・つまみ 24px・値 20px）→ y 514 に標準の説明と「標準に戻す」（右端 666、158×44。文字が入らない言語は 240 まで左へ広げる））/ 外付けのマイク（y 268〜508）→ つながり（50, 568, 616×74。暗い箱 #14171c、段は高さ 36・15px）
+  - 左のカード（28, 168, 660×492）: タブ（50, 188, 616×56）→ かんたん（見出し 18px（y 262）→ プリセット 2 枚（y 296・402、616×96、角丸 16。左に 44px の絵、名前 22px 太字、効果 15px（1 行に入らない言語は 14px の 2 行にして名前を 8px 上げる）、右に札 2 つ 13px）→ y 502〜558 に説明 14px（2 行）か知らせ（ピンクの 2px の枠、56px、右に「元に戻す」44px））/ 細かく調整（エコー除去の行 y 252（見出し 17px、入らなければ 17px の 2 行・切り替え 200, 170×56・右に自動音量の見出し 17px（14px まで縮めて入らなければ 15px の 2 行）と切り替え（右端 666、170×56））→ その下 y 323 に自動音量の説明 12px → ノイズ除去の見出し y 330（19px、右に説明 13px）・3 つから選ぶ切り替え（50, 356, 616×56）→ バー y 416・466（見出し 17px・説明 12px（幅 170。11px まで縮めて入らなければ 11px の 2 行）・溝 6px・つまみ 24px・値 20px）→ y 514 に標準の説明と「標準に戻す」（右端 666、158×44。文字が入らない言語は 240 まで左へ広げる））/ 外付けのマイク（y 268〜508）→ つながり（50, 564, 616×82。暗い箱 #14171c、段は高さ 28・15px（入らなければ 11px まで縮める）、エコー除去の段の下 4px に自動音量の札（高さ 18））
   - 右のカード（704, 92, 668×568）: 声のチェック 22px・説明 14px・録音（1200, 110, 150×56。赤い枠。「録音」「停止」が 21px で入らない言語は 200 まで左へ広げる）→ y 180 の行（説明 / 録音中のメーター / 失敗）→ y 216 の区切り → 履歴 5 件（y 226 から 84 おき、高さ 72。▶ は直径 52、時刻 18px・長さ 13px・2 行目 13px（幅 300）、波形は残りの幅に、幅 3px の棒を 5px おき）
 - アプリと更新の画面: 左のカード（28, 92, 660×568。このアプリ。更新の箱は 50, 244, 616×112、新しい版の確認の切り替えは x 270）と右のカード（704, 92, 668×568。いっしょに使うアプリ）。左右の端はマイクの設定の画面の列と同じ
 - 一番下の行（y 676〜732）と注意書き（y 744 ごろ）: rect 28, 674, 1344×88（このアプリで描く。frame-ui の `drawFooter` は 3 言語の切り替えなので使わない）。言語は左下、自動起動のオン / オフと終了は右端 1372 にそろえる
@@ -273,6 +274,19 @@ Valve のノイズ除去（LADSPA `noise_suppressor_mono` = RNNoise ＋声の判
 - 段ごとの音は、`pw-record --target 0` で録音のストリームを作り、`pw-link` でマイクやフィルターの出口につないで録った。どちらも `PIPEWIRE_REMOTE=pipewire-0-manager` で動かす。`pw-record --target <ノード名>` だと、WirePlumber がストリームを smart filter の後ろへつなぎ直してしまい、狙った段の音にならない。マイクの生のノード（`alsa_input...HiFi__Mic__source`）はふつうのクライアントからは見えない
 - ヘッドセットを被っていないと、SteamVR の `proxmicmute` が ALSA の `VA_DEC0 Volume` / `VA_DEC1 Volume` を 0 にする。机に置いたまま測るとデジタルの無音が録れるので、被って（近接センサーが反応した状態で）測る。このアプリ自身は amixer を動かさない
 
+## エコー除去の自動音量調整
+
+Valve のエコー除去（`libpipewire-module-echo-cancel` の `aec-webrtc`）は、WebRTC の自動音量調整（`webrtc.gain_control2`）も入っている。そのため、エコー除去を使う Frame のスピーカーと、使わないイヤホン（USB-C のドングルなど）とで、アプリに届く声の大きさが変わり、VRChat などでは出口を替えるたびにマイクの音量を合わせ直すことになる（スピーカーで 50% のとき、ドングルでは 100% 近く要る）。エコー除去は残したまま、自動音量調整だけを切れるようにした。上げた音量をすぐあとで下げる手間も無くなる。
+
+- `aec-webrtc` には動いている途中で設定を変える口（`set_params`）が無い。そこで、一定の雑音を消すと同じ別の PipeWire のプロセス（`contrib/denoise/frame-mic-denoise.conf`）に、もう 1 つ `libpipewire-module-echo-cancel` を置いた。設定は Valve の本体（`/etc/pipewire/microphone-filter-chain/microphone-filter-chain-echo-cancel-cpu.conf` の `echo_cancel_*`）の `aec.args` を写し、`webrtc.gain_control2.enabled = false` だけ変えた。PipeWire・WirePlumber の再起動も `/etc` の書き換えも要らない（`/etc` は読んで写しただけ）
+- ノード: マイク側 `frame_mic_ec_capture` / `frame_mic_ec_source`（smart filter の名前 `frame-mic-tuner-ec-source`、行き先は内蔵マイク）、消す音の側 `frame_mic_ec_sink` / `frame_mic_ec_filter_chain_playback`（`frame-mic-tuner-ec-sink`、行き先は Frame のスピーカー `Speaker playback`、`filter.smart.after = [ filter-chain-sink ]`）。どれも最初は `filter.smart.disabled = true`・`steamos.mic_filter = true`。Valve の `spatial-node-config.lua` は名前に「filter」と「chain」の両方が入るノードを飛ばすので、消す音の側の出口はその形の名前にした
+- tracker: `frame-mic.echo-cancel` がオンのとき、`frame-mic.auto-gain` が `false` で、しかも `frame_mic_ec_source` のノードがあれば、Valve の `echo_cancel_*` の代わりに `frame_mic_ec_*` を入れる。2 つは同時には入れない（自動音量調整の 2 回がけを避けるのと同じ理由）。設定が無い（`nil`、再起動前）ときはオンとして扱う。サービスが止まってノードが消えたら（`object-removed`）すぐ Valve の方へ戻すので、自動音量調整なしを選んでいてもエコー除去は切れない
+- 並び: 上の「切り替えの仕組み」のとおり、`eq_source` の `filter.smart.after` に `frame-mic-tuner-ec-source` を足して、EQ のアプリ寄りに入れる。自分の `filter.smart.after = [ filter-chain-ns frame-mic-tuner-denoise ]` で、ノイズ除去・一定の雑音を消すよりマイク寄りに来る（Valve の並びと同じ: マイク → EQ → エコー除去 → ノイズ除去 → 一定の雑音を消す）
+- アプリ: パネルの「細かく調整」のエコー除去の右に「自動音量」のオン・オフ。エコー除去の中のものなので、エコー除去がオフの間は灰色で、覚えている値にかかわらずオフと出す（自動音量調整もかかっていないため。エコー除去をオンに戻すと覚えている値に戻る）。出口ごとに覚え（`auto_gain`、無ければ true）、プリセットはどちらもオン（SteamOS と同じ）。「かんたん」のスピーカーのプリセットは、自動音量調整がオンのときだけ一致する（イヤホンはエコー除去がオフなので見ない）。まとめて書くとき（`ApplySettings`）は、要らない方のエコー除去が一瞬でも入らないように、自動音量調整をエコー除去より先に書く
+- 入れたあと再起動するまでは、`frame-mic.auto-gain` が無い（「not found」）。パネルは「自動音量」を灰色にして、一番下の行に「自動音量の切り替えは Frame を再起動すると使えます」と出す。オフなのにノードが無い（サービスが止まっている）ときは、赤で「自動音量オフのエコー除去が動いていません（frame-mic-tuner-denoise.service）」
+- install.sh は、走っている WirePlumber が `frame-mic.auto-gain` を知っている（この版の tracker が動いている）ときだけサービスを起動する。前の tracker は `frame_mic_ec_*` を知らないので、再起動前に動かすと何が起きるか決まらないため（0.4.0 の門は `frame-mic.steady-noise` だったので、0.4.0 から上げた人は、再起動するまで一定の雑音を消すも使えない）。再起動のあとは `pipewire.service` といっしょに起動する
+- 測った値（2026-11-28、SteamOS 20261118、被って、数を 1〜10 声に出して数えるのを 1 回ずつ。話す大きさはそろえた）: マイクの生の音（`alsa_input...HiFi__Mic__source` の FL。上の「段ごとの音」のとおり `pw-link` で直につなぐ）と、アプリに届く音（既定のマイクを `pw-record`）の差。声の帯域（150 Hz〜4 kHz）で、Valve のエコー除去（自動音量調整あり）が −2.6〜−2.9 dB、自動音量調整なしが −8.9〜−9.1 dB、エコー除去オフ（ドングルと同じつながり）が −8.5〜−9.0 dB。自動音量調整が約 6 dB 上げていて、なしの方はエコー除去オフと 0.6 dB 以内でそろう。150 Hz より下だけは、なしの方がエコー除去オフより 4.5 dB 低い（WebRTC のハイパスフィルターと思われる）。どれも割れは無し（ピークは −18 / −25 / −22 dBFS）。話し始めの 1 秒とその後で、差はほぼ変わらない（−3.4 / −2.9 dB）。自動音量調整は話す大きさで上げる量が変わるので、0.3.4 のときの +15〜20 dB（話す大きさをそろえていない）とは比べられない
+
 ## 声のチェック
 
 イヤホンとスピーカーで、アプリに届く声がどう違うかをその場で聞き比べる。
@@ -426,14 +440,14 @@ systemd から起動されたのに、すでに常駐がいるとき（手で起
   "ns_vad_threshold_percent": 23,
   "ns_vad_grace_ms": 500,
   "outputs": {
-    "alsa_output.platform-sound.HiFi__Speaker__sink": {"name": "Built-in Audio", "kind": "speaker", "echo": true, "ns": false, "ns_vad_threshold_percent": 23, "ns_vad_grace_ms": 500, "steady_noise": false, "steady_noise_db": 20, "last_used": "2026-10-10", "keep_awake": false}
+    "alsa_output.platform-sound.HiFi__Speaker__sink": {"name": "Built-in Audio", "kind": "speaker", "echo": true, "auto_gain": true, "ns": false, "ns_vad_threshold_percent": 23, "ns_vad_grace_ms": 500, "steady_noise": false, "steady_noise_db": 20, "last_used": "2026-10-10", "keep_awake": false}
   }
 }
 ```
 
 | キー | 既定値 | 説明 |
 |---|---|---|
-| `outputs` | （無し） | 音の出口ごとの設定（上の「音の出口ごとの設定」）。キーは出口のキー、値は `name`（表示名）・`kind`（`"speaker"` / `"earphones"`）・`echo`・`ns`（true / false）・`ns_vad_threshold_percent`（0〜99）・`ns_vad_grace_ms`（0〜1000）・`steady_noise`（true / false。一定の雑音を消す。`ns` と両方 true なら、かけるときに一定の雑音を消すにして `ns` をオフにする）・`steady_noise_db`（0〜40）・`last_used`（YYYY-MM-DD）・`keep_awake`（true / false。音の頭切れを防ぐ）。無い項目は初めての出口の値（`keep_awake` は AB13X の USB の出口だけ true）。**`outputs` が無いファイル（前の版）は、次の起動で今の設定を今の出口へ移して書く**。出口を全部忘れても `"outputs": {}` は残る |
+| `outputs` | （無し） | 音の出口ごとの設定（上の「音の出口ごとの設定」）。キーは出口のキー、値は `name`（表示名）・`kind`（`"speaker"` / `"earphones"`）・`echo`・`auto_gain`（true / false。エコー除去の自動音量調整）・`ns`（true / false）・`ns_vad_threshold_percent`（0〜99）・`ns_vad_grace_ms`（0〜1000）・`steady_noise`（true / false。一定の雑音を消す。`ns` と両方 true なら、かけるときに一定の雑音を消すにして `ns` をオフにする）・`steady_noise_db`（0〜40）・`last_used`（YYYY-MM-DD）・`keep_awake`（true / false。音の頭切れを防ぐ）。無い項目は初めての出口の値（`auto_gain` は true、`keep_awake` は AB13X の USB の出口だけ true）。**`outputs` が無いファイル（前の版）は、次の起動で今の設定を今の出口へ移して書く**。出口を全部忘れても `"outputs": {}` は残る |
 | `update_check` | `true` | 新しい版の自動確認（起動時と 1 日 1 回）と、ほかのアプリの一覧の取得。アプリと更新の画面の「新しい版の確認」で切り替えると書かれる。オフでも「今すぐ確かめる」は押せる |
 | `language` | Steam の言語 | 画面の文言の言語。無いときは Steam の言語設定（`~/.steam/registry.vdf` の `language`、読むだけ）が `japanese` なら日本語、`schinese`・`chinese` なら簡体字中国語、それ以外（`tchinese` を含む）は英語（Steam の値が読めなければ `LC_ALL`・`LC_MESSAGES`・`LANG` の `ja` / `zh_CN` も見る）。`"ja"`（日本語）、`"en"`（English）、`"sc"`（简体中文）。パネルの言語ボタンで変えると保存される（一時ファイルに書いてから置き換える） |
 | `tab` | `"quick"` | 最後に見ていたタブ。`"quick"`（かんたん）か `"fine"`（細かく調整）。タブを切り替えたときに書かれ、パネルを開いたときにこのタブを出す |

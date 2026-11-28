@@ -374,7 +374,7 @@ NoiseMode noiseModeOf(bool ns, bool steady) {
 }
 
 bool OutputProfile::sameSettings(const OutputProfile& other) const {
-    return echo == other.echo && ns == other.ns && std::fabs(nsVad - other.nsVad) < 0.5 &&
+    return echo == other.echo && autoGain == other.autoGain && ns == other.ns && std::fabs(nsVad - other.nsVad) < 0.5 &&
            std::fabs(nsGrace - other.nsGrace) < 0.5 && steady == other.steady &&
            std::fabs(steadyDb - other.steadyDb) < 0.5;
 }
@@ -389,8 +389,9 @@ OutputProfile firstProfile(const std::string& key, const std::string& name) {
     profile.name = name;
     profile.kind = isBuiltinSpeaker(key) ? OutputKind::Speaker : OutputKind::Earphones;
     // プリセット（ユーザーと決めたもの）: スピーカー = エコー除去オン・ノイズ除去オフ、イヤホン = 両方オフ
-    // （ノイズ除去オフ = Valve のノイズ除去も、一定の雑音を消すも使わない）
+    // （ノイズ除去オフ = Valve のノイズ除去も、一定の雑音を消すも使わない）。自動音量調整はどちらもオン（SteamOS と同じ）
     profile.echo = profile.kind == OutputKind::Speaker;
+    profile.autoGain = true;
     profile.ns = false;
     profile.nsVad = kNsVadDefault;
     profile.nsGrace = kNsGraceDefault;

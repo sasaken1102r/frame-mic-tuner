@@ -34,9 +34,11 @@ enum class PanelAction {
     TabQuick,         ///< 「かんたん」
     TabFine,          ///< 「細かく調整」
     Earphone,         ///< プリセット: イヤホン・ヘッドホン（エコー除去オフ・ノイズ除去オフ）
-    Speaker,          ///< プリセット: Frame のスピーカー（エコー除去オン・ノイズ除去オフ）
+    Speaker,          ///< プリセット: Frame のスピーカー（エコー除去オン・自動音量調整オン・ノイズ除去オフ）
     EchoOn,
     EchoOff,
+    GainOn,           ///< エコー除去の自動音量調整: オン（エコー除去がオフの間は押せない）
+    GainOff,          ///< エコー除去の自動音量調整: オフ
     NsOn,             ///< ノイズ除去の種類: Valve のノイズ除去（声以外を消す）
     NsOff,            ///< ノイズ除去の種類: オフ
     SteadyOn,         ///< ノイズ除去の種類: 一定の雑音を消す（Frame Mic Tuner のもの）
@@ -400,6 +402,9 @@ private:
     double holdSteadyUntil_ = -1.0;
     PanelAction presetHold_ = PanelAction::None;  ///< 書き込み中のプリセット（その間は選択中の見た目で保つ）
     double presetHoldUntil_ = -1.0;
+    // 細かく調整のタブが一番下の行に出したい自動音量調整の説明（描くたびに作り直す。nullptr なら無し）
+    const char* gainNote_ = nullptr;
+    bool gainNoteDanger_ = false;   ///< 赤で出すか（自動音量調整なしの方が動いていない）
     // 重ねた画面の一覧のスクロール（スティック・ドラッグ）
     frame_ui::Rect listRect_;       ///< 一覧の見えている枠（最後に描いたとき）
     double listScroll_ = 0.0;
@@ -454,16 +459,18 @@ private:
     void drawSettings(const frame_ui::Canvas& ui, const UiText& t, const Config& config, const PanelModel& model);
     void drawSelectors(const frame_ui::Canvas& ui, const UiText& t, const Config& config, const PanelModel& model);
     void drawQuick(const frame_ui::Canvas& ui, const UiText& t, const Config& config, const PanelModel& model,
-                   bool echo, NoiseMode mode, bool known, const std::string& outputName);
+                   bool echo, bool gain, NoiseMode mode, bool known, const std::string& outputName);
     /**
-     * 細かく調整のタブ（エコー除去、ノイズ除去の種類 3 つ、その種類の強さ）。
+     * 細かく調整のタブ（エコー除去とその自動音量調整、ノイズ除去の種類 3 つ、その種類の強さ）。
+     * @param gain 表示する自動音量調整
+     * @param gainEnabled 自動音量調整を切り替えられるか（エコー除去がオフの間・設定がまだ無い間は押せない）
      * @param mode 表示するノイズ除去の種類
      * @param known エコー除去・ノイズ除去の値を読めているか
      * @param nsParamsKnown 判定の厳しさ・余韻を読めているか
      * @param steadyParamsKnown 消す強さを読めているか
      */
-    void drawFine(const frame_ui::Canvas& ui, const UiText& t, const PanelModel& model, bool echo, NoiseMode mode, bool known,
-                  bool nsParamsKnown, bool steadyParamsKnown);
+    void drawFine(const frame_ui::Canvas& ui, const UiText& t, const PanelModel& model, bool echo, bool gain,
+                  bool gainEnabled, NoiseMode mode, bool known, bool nsParamsKnown, bool steadyParamsKnown);
     /**
      * バー 1 本（見出しと説明・溝・つまみ・右の値）。当たり判定と溝の位置も登録する。
      * @param top 行の上（高さ 48）
@@ -479,8 +486,8 @@ private:
      */
     void drawSlider(const frame_ui::Canvas& ui, double top, PanelAction action, double min, double max, double value,
                     const std::string& title, const std::string& hint, const std::string& valueText, bool active, bool known);
-    void drawExternal(const frame_ui::Canvas& ui, const UiText& t, const PanelModel& model, bool echo, NoiseMode mode,
-                      const std::string& outputName);
+    void drawExternal(const frame_ui::Canvas& ui, const UiText& t, const PanelModel& model, bool echo, bool gain,
+                      NoiseMode mode, const std::string& outputName);
     void drawPipeline(const frame_ui::Canvas& ui, const UiText& t, const MicState& state, bool external);
     void drawVoice(const frame_ui::Canvas& ui, const UiText& t, const VoiceView& voice);
     void drawApps(const frame_ui::Canvas& ui, const UiText& t, const Config& config, const PanelModel& model);

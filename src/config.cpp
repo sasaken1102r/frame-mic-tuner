@@ -72,6 +72,8 @@ OutputProfile readProfile(const JsonValue& object, const std::string& key, std::
         }
     }
     if (const JsonValue* echo = object.get("echo"); echo != nullptr && echo->isBool()) profile.echo = echo->boolean;
+    // 自動音量調整（無い = 前の版の設定ファイル。firstProfile の既定のまま = オン。前の版は Valve のエコー除去だけだった）
+    if (const JsonValue* gain = object.get("auto_gain"); gain != nullptr && gain->isBool()) profile.autoGain = gain->boolean;
     if (const JsonValue* ns = object.get("ns"); ns != nullptr && ns->isBool()) profile.ns = ns->boolean;
     const JsonValue* vad = object.get("ns_vad_threshold_percent");
     if (vad != nullptr && vad->isNumber()) profile.nsVad = clampNsVad(vad->number);
@@ -160,8 +162,8 @@ bool loadConfig(const std::string& path, Config& out, std::vector<std::string>& 
             warnings.push_back("ns_vad_threshold_percent と ns_vad_grace_ms は 2 つとも数値で書いてください");
         }
     }
-    // 音の出口ごとの設定: { "<出口のキー>": { "name", "kind", "echo", "ns", "ns_vad_threshold_percent", "ns_vad_grace_ms",
-    // "steady_noise", "steady_noise_db", "last_used", "keep_awake" } }
+    // 音の出口ごとの設定: { "<出口のキー>": { "name", "kind", "echo", "auto_gain", "ns", "ns_vad_threshold_percent",
+    // "ns_vad_grace_ms", "steady_noise", "steady_noise_db", "last_used", "keep_awake" } }
     if (const JsonValue* outputs = root.get("outputs")) {
         if (outputs->isObject()) {
             config.outputsSaved = true;
@@ -221,7 +223,8 @@ bool saveConfig(const std::string& path, const Config& config, std::string& erro
             std::snprintf(steadyDb, sizeof(steadyDb), ", \"steady_noise_db\": %.0f", clampSteadyDb(p.steadyDb));
             out << (first ? "\n" : ",\n") << "    " << jsonString(entry.first) << ": {\"name\": " << jsonString(p.name)
                 << ", \"kind\": \"" << (p.kind == OutputKind::Speaker ? "speaker" : "earphones") << "\""
-                << ", \"echo\": " << (p.echo ? "true" : "false") << ", \"ns\": " << (p.ns ? "true" : "false") << ", "
+                << ", \"echo\": " << (p.echo ? "true" : "false") << ", \"auto_gain\": " << (p.autoGain ? "true" : "false")
+                << ", \"ns\": " << (p.ns ? "true" : "false") << ", "
                 << numbers << ", \"steady_noise\": " << (p.steady ? "true" : "false") << steadyDb
                 << ", \"last_used\": " << jsonString(p.lastUsed)
                 << ", \"keep_awake\": " << (p.keepAwake ? "true" : "false") << "}";

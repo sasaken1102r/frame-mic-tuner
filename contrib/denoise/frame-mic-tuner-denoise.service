@@ -1,5 +1,5 @@
 [Unit]
-Description=Frame Mic Tuner steady-noise remover (PipeWire filter-chain for the Steam Frame microphone)
+Description=Frame Mic Tuner mic filters (steady-noise remover and echo canceller without auto gain, for the Steam Frame microphone)
 # PipeWire の別のプロセス（クライアント）として動く。PipeWire が止まると一緒に止まり、動き出すと一緒に動く
 After=pipewire.service
 BindsTo=pipewire.service

@@ -66,7 +66,7 @@ struct UiText {
     const char* undo;              ///< 「元に戻す」
     // ---- 細かく調整 ----
     const char* rowEcho;           ///< エコー除去
-    const char* echoHint;          ///< エコー除去の説明
+    const char* rowGain;           ///< エコー除去の自動音量調整（エコー除去の切り替えの右の短い見出し）
     const char* rowNs;             ///< ノイズ除去
     const char* nsHint;            ///< ノイズ除去の説明
     const char* on;
@@ -91,6 +91,11 @@ struct UiText {
     const char* sumSteadyOn;       ///< 設定のまとめの後ろに足す「・一定の雑音を消す」
     const char* errWriteSteady;    ///< 一定の雑音を消すの切り替えに失敗（wpctl）
     const char* errWriteSteadyDb;  ///< 一定の雑音を消す強さを変えられない（pw-cli）
+    // ---- 細かく調整: エコー除去の自動音量調整 ----
+    const char* gainNeedsReboot;   ///< 設定がまだ無い（入れたあと Frame を再起動していない）ときの説明（一番下の行）
+    const char* gainStopped;       ///< オフなのに自動音量調整なしの方が動いていない（Valve のを使っている）ときの説明
+    const char* sumGainOff;        ///< 設定のまとめの「エコー除去オン」の後ろに足す「・自動音量オフ」
+    const char* errWriteGain;      ///< 自動音量調整の切り替えに失敗（wpctl）
     // ---- 外付けのマイク ----
     const char* externalNowFormat;    ///< 「いまは %s を使っています」
     const char* externalExplain;      ///< 処理がかかるのは内蔵マイクだけ
@@ -110,6 +115,7 @@ struct UiText {
     const char* stageOut;          ///< 通り道の最後（アプリへ）
     const char* chainIdle;         ///< 使っていないときの説明
     const char* chainUnknown;      ///< つながりを読めない
+    const char* gainHint;          ///< 細かく調整のエコー除去の行の下の説明（自動音量はエコー除去の中にある）
     // ---- 声のチェック ----
     const char* voiceTitle;        ///< 声のチェック
     const char* voiceHint;         ///< 声のチェックの説明

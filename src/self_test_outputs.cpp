@@ -376,6 +376,7 @@ void outputSelfTests(const Expect& expect) {
         OutputProfile steadyProfile = firstProfile("bluez_output.AA_BB_CC_DD_EE_FF", "WH-1000XM4");
         steadyProfile.steady = true;
         steadyProfile.steadyDb = 33;
+        steadyProfile.autoGain = false;
         saved.outputs["bluez_output.AA_BB_CC_DD_EE_FF"] = steadyProfile;
         std::string error;
         std::vector<std::string> warnings;
@@ -386,6 +387,9 @@ void outputSelfTests(const Expect& expect) {
         expect("設定ファイル: 一定の雑音を消す（steady_noise オン・steady_noise_db 33）を保存して読み直すと同じ",
                ok && steadyLoaded.steady && !steadyLoaded.ns && steadyLoaded.steadyDb == 33 &&
                    !loaded.outputs[kAb13xKey].steady && loaded.outputs[kAb13xKey].steadyDb == kSteadyDbDefault);
+        expect("設定ファイル: 自動音量調整（auto_gain オフ）を保存して読み直すと同じ。ほかの出口はオンのまま",
+               ok && !steadyLoaded.autoGain && loaded.outputs[kAb13xKey].autoGain &&
+                   loaded.outputs[kBuiltinSpeakerKey].autoGain);
         loaded.outputs.erase("bluez_output.AA_BB_CC_DD_EE_FF");
         expect("設定ファイル: 出口ごとの設定（名前の \" と日本語・強さ・最後に使った日）を保存して読み直すと同じ",
                ok && warnings.empty() && loaded.outputsSaved && loaded.outputs.size() == 2 && it != loaded.outputs.end() &&
@@ -454,6 +458,8 @@ void outputSelfTests(const Expect& expect) {
         expect("設定ファイル: steady_noise・steady_noise_db が無い出口（前の版）は、一定の雑音を消すオフ・20 dB",
                oldOk && !old.outputs[kAb13xKey].steady && old.outputs[kAb13xKey].steadyDb == kSteadyDbDefault &&
                    !old.outputs[kBuiltinSpeakerKey].steady && old.outputs[kBuiltinSpeakerKey].noiseMode() == NoiseMode::Off);
+        expect("設定ファイル: auto_gain が無い出口（前の版）は、自動音量調整オン（SteamOS と同じ）",
+               oldOk && old.outputs[kAb13xKey].autoGain && old.outputs[kBuiltinSpeakerKey].autoGain);
         {
             // 範囲外の強さは丸め、両方 true は読んだまま（かけるときに一定の雑音を消すにする）
             std::ofstream file(path, std::ios::binary | std::ios::trunc);

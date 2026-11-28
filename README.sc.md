@@ -16,17 +16,17 @@ https://github.com/user-attachments/assets/14b5e180-f417-4d90-85f5-6ba1dc573546
 
 ## 它能做什么
 
-- **按声音输出分别记住设置**：面板会为每个音频输出单独记住 Frame 麦克风的设置（回声消除、用哪种噪声抑制及其强度）：Frame 扬声器、USB-C 耳机或转接器、蓝牙耳机。输出一变（例如插上耳机并成为当前输出），即使面板关着，应用也会自己换上该输出保存的设置，并显示「已连接 %s，已切换为记住的设置」，同时给出 **撤销**。没见过的输出如果是 Frame 扬声器，就从 **Frame 扬声器** 预设开始，否则从 **耳机 / 头戴式耳机** 预设开始。
+- **按声音输出分别记住设置**：面板会为每个音频输出单独记住 Frame 麦克风的设置（回声消除及其自动增益、用哪种噪声抑制及其强度）：Frame 扬声器、USB-C 耳机或转接器、蓝牙耳机。输出一变（例如插上耳机并成为当前输出），即使面板关着，应用也会自己换上该输出保存的设置，并显示「已连接 %s，已切换为记住的设置」，同时给出 **撤销**。没见过的输出如果是 Frame 扬声器，就从 **Frame 扬声器** 预设开始，否则从 **耳机 / 头戴式耳机** 预设开始。
 - **声音输出和麦克风**：上方的 **声音输出** 列出已连接的输出和以前用过的输出。在那里可以 **从这里输出**（设为默认输出，与 SteamVR 的音频设置相同），提前查看并修改某个输出的设置，或 **忘记** 不再使用的输出。列表较长时可用摇杆或拖动来滚动。**麦克风** 用来选择应用使用的麦克风。回声消除和噪声抑制只对 Frame 内置麦克风生效；用其他麦克风时，面板会说明这一点，并提供 **改回 Frame 内置麦克风**。
 - **防止开头被切**（在声音输出列表里）：有些 USB-C 耳机转接器（用 AB13X 确认过）在无声约 1 秒后会自己关闭功放，下一段声音的开头就听不到了。打开后，应用运行期间会持续向该输出播放听不见的 5 Hz 声音，让转接器的功放不会关闭。AB13X 转接器默认打开，其他输出默认关闭；安静时可能听到轻微的沙沙声，也会多耗一点电。
-- **简单设置和精细调整**：**简单设置** 里是按收听方式准备的预设。**耳机 / 头戴式耳机** 关闭回声消除和噪声抑制。**Frame 扬声器** 打开回声消除、关闭噪声抑制。**精细调整** 里是回声消除的开/关，以及噪声抑制的三选一：**关**、**只留人声**（SteamOS 自带的噪声抑制，有两根滑块：**麦克风灵敏度** 是声音要多像人声才会通过，越低越容易通过；**收音保持时间** 是说完后还继续收音多久）、**消除持续噪声**（本应用自己的滤波器：只降低空气净化器、风扇这类一直在响的声音，保留呼吸声和耳语；一根 **消除强度** 滑块）。改动会立刻生效，麦克风正在使用时也不会把声音切断。面板会打开你上次看的标签页。
-- **信号链路**：显示是否有应用正在使用麦克风，以及声音实际经过哪些处理（麦克风 → 音质补正 → 回声消除 → 噪声抑制或消除持续噪声 → 应用），数据来自当前的 PipeWire 连接。
+- **简单设置和精细调整**：**简单设置** 里是按收听方式准备的预设。**耳机 / 头戴式耳机** 关闭回声消除和噪声抑制。**Frame 扬声器** 打开回声消除（带自动增益，与 SteamOS 相同）、关闭噪声抑制。**精细调整** 里是回声消除的开/关、它的 **自动增益** 开/关，以及噪声抑制的三选一：**关**、**只留人声**（SteamOS 自带的噪声抑制，有两根滑块：**麦克风灵敏度** 是声音要多像人声才会通过，越低越容易通过；**收音保持时间** 是说完后还继续收音多久）、**消除持续噪声**（本应用自己的滤波器：只降低空气净化器、风扇这类一直在响的声音，保留呼吸声和耳语；一根 **消除强度** 滑块）。改动会立刻生效，麦克风正在使用时也不会把声音切断。面板会打开你上次看的标签页。
+- **信号链路**：显示是否有应用正在使用麦克风，以及声音实际经过哪些处理（麦克风 → 音质补正 → 回声消除 → 噪声抑制或消除持续噪声 → 应用），数据来自当前的 PipeWire 连接。**自动增益** 在回声消除内部运行，所以挂在回声消除这一格的下方；在精细调整里，开关下方有一行说明它只在回声消除开启时工作。
 - **静音**：标题栏显示「使用中」「未使用」或红色的「静音中」（从 Steam、`wpctl`、aux 按钮或其他地方静音都一样），旁边就是 **静音** / **取消静音**。
 - **声音检查**：最多录 10 秒应用最终收到的声音，保留最近 5 条，并用当前输出播放。每条录音显示时间、长度、录音时的输出和设置（例如「AB13X · 回声消除关」）以及一小段波形。
 - **应用与更新**（右上角按钮；粉色圆点表示有内容要看）：当前版本、**立即检查** 和 **更新**、**检查新版本** 开关，以及作者的其他 Steam Frame 应用。和本应用配合的 frame-aux-shortcuts（用 aux 按钮切换麦克风静音）排在最前，其他应用点一下就能打开。安装时会先给出确切命令，再在 Konsole 里打开安装程序。
 - 界面语言有日语、英语、简体中文、德语、法语、西班牙语和意大利语。文字和控件满足 WCAG 2.x AA 对比度。
 
-为什么需要它：应用使用麦克风时，SteamOS 会让声音经过音质补正、回声消除和噪声抑制。回声消除会大幅削弱细小声音，噪声抑制会把不像人声的声音变成无声。用耳机时没有需要消除的扬声器声音，关掉回声消除能让更多说话声通过。噪声抑制还会把呼吸声和耳语也消掉（在 Frame 上实测，即使调到最弱，呼吸声也降低了 10–55 dB）；**消除持续噪声** 只降低一直在响的背景声（默认强度下约 20 dB），呼吸声和耳语基本保留（只降低 0–1.4 dB）。
+为什么需要它：应用使用麦克风时，SteamOS 会让声音经过音质补正、回声消除和噪声抑制。回声消除会大幅削弱细小声音，噪声抑制会把不像人声的声音变成无声。用耳机时没有需要消除的扬声器声音，关掉回声消除能让更多说话声通过。噪声抑制还会把呼吸声和耳语也消掉（在 Frame 上实测，即使调到最弱，呼吸声也降低了 10–55 dB）；**消除持续噪声** 只降低一直在响的背景声（默认强度下约 20 dB），呼吸声和耳语基本保留（只降低 0–1.4 dB）。SteamOS 的回声消除里还内置了自动增益控制，用 Frame 扬声器时传给应用的声音比用耳机时大约响 6 dB，所以在 VRChat 等应用里每换一次输出就要调一次麦克风音量；关掉 **自动增益**，就能在 Frame 扬声器上保留回声消除，同时声音大小和用耳机时一致。
 
 ## 需要准备
 
@@ -84,9 +84,9 @@ cd frame-mic-tuner
 
 - 应用本体、仪表盘 **＋**（启动程序）列表里的一项，以及图标
 - 一个随 SteamVR 一起启动的 systemd 用户单元（你打开之前不会启用；见下文）
-- WirePlumber 脚本和配置（`contrib/wireplumber/`），用来替换 SteamOS 的麦克风跟踪，使回声消除和噪声抑制可以切换。除此之外的行为与原来相同。
+- WirePlumber 脚本和配置（`contrib/wireplumber/`），用来替换 SteamOS 的麦克风跟踪，使回声消除（及其自动增益）和噪声抑制可以切换。除此之外的行为与原来相同。
 - 共用的更新脚本（`~/.local/share/frame-mic-tuner/frame-update.sh`，来自 `vendor/frame-updater/`），供 **应用与更新** 使用
-- 消除持续噪声的部分：一个小插件（`~/.local/lib/frame-mic-tuner/frame-mic-denoise.so`）和它的配置（`~/.local/share/frame-mic-tuner/frame-mic-denoise.conf`），由 systemd 用户服务（`frame-mic-tuner-denoise.service`）作为一个单独的小 PipeWire 进程一直运行。只有选择 **消除持续噪声** 时才会接入麦克风的链路；不会重启 PipeWire 本身
+- 消除持续噪声的部分：一个小插件（`~/.local/lib/frame-mic-tuner/frame-mic-denoise.so`）和它的配置（`~/.local/share/frame-mic-tuner/frame-mic-denoise.conf`），由 systemd 用户服务（`frame-mic-tuner-denoise.service`）作为一个单独的小 PipeWire 进程一直运行。同一个进程还会运行一份关闭了自动增益控制的 SteamOS 回声消除。两者都只在被选中时才会接入麦克风的链路（选择 **消除持续噪声**，或回声消除的 **自动增益** 关闭）；不会重启 PipeWire 本身
 
 移除：运行 `./install.sh --uninstall`（也会停止并删除消除持续噪声的服务和插件），然后重启头显，即可恢复 SteamOS 原来的麦克风行为。加上 `--purge` 还会删除应用的设置和保存的切换值。
 
@@ -97,6 +97,7 @@ cd frame-mic-tuner
    - **精细调整** 里的噪声抑制是三选一：**关**；**只留人声** 是 SteamOS 的噪声抑制（把不像人声的声音全部消掉，呼吸声和耳语也会消失）；**消除持续噪声** 只降低空气净化器、风扇这类一直在响的声音，保留呼吸声和耳语。
    - 选 **只留人声** 时，拖动 **麦克风灵敏度** 和 **收音保持时间** 来调节。SteamOS 的默认是 23% 和 500 毫秒；**恢复默认** 可以改回去。噪声抑制关闭时它们显示为灰色，不起作用。
    - 选 **消除持续噪声** 时，拖动 **消除强度**（0–40 dB）：越大越安静，但过大声音会发闷。**恢复默认** 设为 20 dB。刚安装后，在重启一次头显之前它是灰色的，不能选。
+   - **自动增益**（在回声消除旁边）是 SteamOS 回声消除里的自动增益控制。它在 SteamOS 和两个预设里都是开着的。关闭后，应用会改用它自己的同一个回声消除，只是关闭了自动增益控制，这样你说话时音量不会忽高忽低。它只存在于回声消除之内，所以回声消除关闭时它是灰色的。刚安装后，在重启一次头显之前它是灰色的。
    - 耳语在 20 dB 时听起来正好。轻微的呼吸声在 3 dB 左右保留得最好：从 5 dB 左右往上，就很难和同样是持续噪声的风扇声区分开。拖长超过 8 秒左右的声音会慢慢变小；噪声变大时（例如把风扇开大），要过几秒才会再次被消除。
    - SteamOS 的音频每次重新启动（例如重启之后）都会把麦克风灵敏度和收音保持时间恢复成默认；消除强度也会在它的服务重新启动时回到 20 dB。应用按输出保存你的值，并在启动时和输出变化时再设上去，所以只在应用运行期间有效。如果希望一直有效，请打开 **随 SteamVR 启动**。应用没在运行时，用的是 SteamOS 的默认值。
    - 应用自己切换之后，简单设置会显示「已连接 <输出>，已切换为记住的设置」。**撤销** 会恢复切换前的设置，并把那个值重新记成这个输出的设置。
@@ -122,10 +123,11 @@ wpctl settings --save frame-mic.echo-cancel false        # 耳机：关闭回声
 wpctl settings --save frame-mic.echo-cancel true         # 扬声器：打开回声消除（默认）
 wpctl settings --save frame-mic.noise-suppression true   # 打开噪声抑制「只留人声」（默认是关）
 wpctl settings --save frame-mic.steady-noise true        # 打开噪声抑制「消除持续噪声」（默认是关）
+wpctl settings --save frame-mic.auto-gain false          # 关闭回声消除的自动增益控制（默认：开）
 ~/.local/bin/frame-mic-tuner --print                     # 当前值、麦克风是否在用、信号链路、输出及其保存的设置
 ```
 
-两种噪声抑制只打开其中一个。两个都打开时，面板会显示为 **消除持续噪声**，并在下次应用设置时关闭「只留人声」。`frame-mic.steady-noise` 要在安装后重启头显才会出现。
+两种噪声抑制只打开其中一个。两个都打开时，面板会显示为 **消除持续噪声**，并在下次应用设置时关闭「只留人声」。`frame-mic.steady-noise` 和 `frame-mic.auto-gain` 要在安装后重启头显才会出现。
 
 这样改的值（或用 aux 按钮改的）会在面板打开时被注意到，最晚在输出变化时注意到，并记成当前输出的设置。
 
@@ -135,6 +137,8 @@ wpctl settings --save frame-mic.steady-noise true        # 打开噪声抑制「
 - **自启动按钮是灰色的**：systemd 单元还没安装。运行 `./install.sh`。
 - **「消除持续噪声」是灰色的（「重启 Frame 后即可使用“消除持续噪声”」）**：WirePlumber 还在运行安装前的切换脚本。重启一次头显。
 - **显示「持续噪声消除服务未运行」**：用 `systemctl --user status frame-mic-tuner-denoise.service` 查看服务（用 `systemctl --user start frame-mic-tuner-denoise.service` 启动，或再运行一次 `./install.sh`）。它没运行时，麦克风照常可用，只是不经过这个滤波器。
+- **自动增益是灰色的（「重启 Frame 后即可切换“自动增益”」）**：与消除持续噪声一样，安装后重启一次头显。
+- **显示「无自动增益的回声消除未运行」**：同一个服务没有运行（见上）。在它运行之前，会使用 SteamOS 自带的回声消除（带自动增益），所以回声消除仍然有效。
 - **录音没有声音，或者对方完全听不到你**：检查头显混音器里的麦克风音量（只读，是安全的）：
   ```sh
   amixer -c 0 cget name='VA_DEC0 Volume'
@@ -176,8 +180,8 @@ wpctl settings --save frame-mic.steady-noise true        # 打开噪声抑制「
 ## 免责声明
 
 - 请自行承担使用风险。本项目使用 AI 模型 Claude Opus 5.5 制作。我在自己的 Steam Frame 上测试过，但不能对你的设备上发生的事情负责。运行之前请自己阅读并检查代码。本软件不提供任何保证（见 [LICENSE](LICENSE)）。
-- 它会改动：WirePlumber 的三项设置 `frame-mic.echo-cancel`、`frame-mic.noise-suppression` 和 `frame-mic.steady-noise`（通过 `wpctl settings`），噪声抑制正在使用的两个参数「VAD Threshold (%)」和「VAD Grace Period (ms)」以及消除持续噪声的「Strength (dB)」（通过 `pw-cli set-param`；音频或该服务重新启动时会恢复默认），以及主文件夹里的 WirePlumber 配置（用自己的脚本替换 SteamOS 的麦克风跟踪）。安装时还会加入 systemd 用户服务 `frame-mic-tuner-denoise.service`，它一直运行一个单独的小 PipeWire 进程，加载 `~/.local/lib/frame-mic-tuner/` 里的插件（`./install.sh --uninstall` 会删除）。按下 **从这里输出**、**使用这个麦克风** / **改回 Frame 内置麦克风** 或 **静音** / **取消静音** 时，会更改默认输出、默认麦克风或其静音（通过 `wpctl set-default` / `wpctl set-mute`，与 SteamVR 的音频设置相同）。当前输出的 **防止开头被切** 打开期间，它会向该输出播放听不见的 5 Hz 声音（名为「Frame Mic Tuner keep-awake」的音频流）。除此之外，它只会在你要求时启用或停用自己的 systemd 用户单元，在你确认安装其他应用时用 Konsole 打开安装程序，以及在从面板更新时，用一个短时的 systemd 用户单元（`frame-mic-tuner-update`）运行新发布的 `install.sh`。
-- 它从不重启 PipeWire 或 WirePlumber（安装时只会启动或重启自己的消除持续噪声进程），从不写入 ALSA 混音器（amixer），从不改 `/etc`，也从不需要 root。
+- 它会改动：WirePlumber 的四项设置 `frame-mic.echo-cancel`、`frame-mic.auto-gain`、`frame-mic.noise-suppression` 和 `frame-mic.steady-noise`（通过 `wpctl settings`），噪声抑制正在使用的两个参数「VAD Threshold (%)」和「VAD Grace Period (ms)」以及消除持续噪声的「Strength (dB)」（通过 `pw-cli set-param`；音频或该服务重新启动时会恢复默认），以及主文件夹里的 WirePlumber 配置（用自己的脚本替换 SteamOS 的麦克风跟踪）。安装时还会加入 systemd 用户服务 `frame-mic-tuner-denoise.service`，它一直运行一个单独的小 PipeWire 进程，加载 `~/.local/lib/frame-mic-tuner/` 里的插件和无自动增益的回声消除（`./install.sh --uninstall` 会删除）。按下 **从这里输出**、**使用这个麦克风** / **改回 Frame 内置麦克风** 或 **静音** / **取消静音** 时，会更改默认输出、默认麦克风或其静音（通过 `wpctl set-default` / `wpctl set-mute`，与 SteamVR 的音频设置相同）。当前输出的 **防止开头被切** 打开期间，它会向该输出播放听不见的 5 Hz 声音（名为「Frame Mic Tuner keep-awake」的音频流）。除此之外，它只会在你要求时启用或停用自己的 systemd 用户单元，在你确认安装其他应用时用 Konsole 打开安装程序，以及在从面板更新时，用一个短时的 systemd 用户单元（`frame-mic-tuner-update`）运行新发布的 `install.sh`。
+- 它从不重启 PipeWire 或 WirePlumber（安装时只会启动或重启自己的滤波器进程），从不写入 ALSA 混音器（amixer），从不改 `/etc`，也从不需要 root。
 - **更新**：通过 HTTPS 从 GitHub 下载最新发布的 `.tar.gz` 和 `SHA256SUMS`（只连接 GitHub 自己的主机），核对哈希之后才解压到 `~/.cache/frame-mic-tuner/update/`，并用与上次安装相同的选项运行其中的 `install.sh`。如果没有 `SHA256SUMS`、哈希不符，或压缩包里有绝对路径、`..`、链接或特殊文件，它会拒绝并什么都不改。下载的文件结束后会删除。`SHA256SUMS` 是同一发布里的校验和，不是签名：能发现损坏或未下完的文件，但不能防止 GitHub 上的发布本身被替换。正在运行的应用不会重启：要使用新版本，请退出后再启动。具体步骤见 [frame-update.sh 的说明](vendor/frame-updater/frame-update.sh)。
 - SteamOS 更新可能改变麦克风滤波器的构成。那时在本项目跟进之前，切换可能失效。因为切换脚本是 WirePlumber 的必要部分，脚本无法加载时也可能让头显完全没有声音（见「出问题时」）。`./install.sh --uninstall` 之后重启，可以恢复 SteamOS 原来的行为。
 - 这是非官方项目，与 Valve Corporation 没有关系，也未获其认可。Steam、Steam Frame、SteamOS、SteamVR 和 Steam Link 是 Valve Corporation 在美国和/或其他国家的商标和/或注册商标。这里使用这些名称只是为了说明本软件配合什么使用。
@@ -192,7 +196,7 @@ cmake -G Ninja -S . -B build && ninja -C build
 scripts/package.sh   # 发布构建：dist/frame-mic-tuner-<version>.tar.gz、dist/SHA256SUMS
 ```
 
-不需要 SteamVR 的常用选项：`--print`、`--set-ns-vad N` / `--set-ns-grace N`（立刻应用噪声抑制强度，不保存）、`--set-steady on|off` 和 `--set-steady-db N`（切换消除持续噪声 / 立刻应用其强度，强度不保存）、`--dump-png 路径`（把面板画成 PNG，可用 `--fake-output`、`--fake-switched`、`--fake-external-mic`、`--fake-steady on`、`--fake-steady-missing`、`--fake-denoise-stopped`、`--fake-update STATE` 等 `--fake-*` 做截图状态，并用 `--view` / `--overlay` 画其他画面）、`--test-record 3`（录 3 秒再播放）、`--contrast-report`（每一对颜色的 WCAG 对比度）和 `--version`。设计笔记、切换脚本的原理和测试结果在 [docs/DEVELOPMENT.ja.md](docs/DEVELOPMENT.ja.md)（日文）。
+不需要 SteamVR 的常用选项：`--print`、`--set-ns-vad N` / `--set-ns-grace N`（立刻应用噪声抑制强度，不保存）、`--set-steady on|off` 和 `--set-steady-db N`（切换消除持续噪声 / 立刻应用其强度，强度不保存）、`--set-gain on|off`（切换回声消除的自动增益）、`--dump-png 路径`（把面板画成 PNG，可用 `--fake-output`、`--fake-switched`、`--fake-external-mic`、`--fake-steady on`、`--fake-steady-missing`、`--fake-gain off`、`--fake-gain-missing`、`--fake-denoise-stopped`、`--fake-update STATE` 等 `--fake-*` 做截图状态，并用 `--view` / `--overlay` 画其他画面）、`--test-record 3`（录 3 秒再播放）、`--contrast-report`（每一对颜色的 WCAG 对比度）和 `--version`。设计笔记、切换脚本的原理和测试结果在 [docs/DEVELOPMENT.ja.md](docs/DEVELOPMENT.ja.md)（日文）。
 
 更新机制（`vendor/frame-updater/`）、共用的界面部件（`vendor/frame-ui/`）和作者其他应用的列表（`vendor/frame-apps/`）是从私有的共用仓库复制来的。不要手动修改这些副本。各自的 `verify.sh`（由 `scripts/package.sh` 运行）会检查它们有没有被改过。
 
