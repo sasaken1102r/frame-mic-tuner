@@ -1675,8 +1675,9 @@ void MicPanel::drawFine(const frame_ui::Canvas& ui, const UiText& t, const Panel
             const std::vector<std::string> lines = wrapBalanced(ui, t.rowGain, 15, true, gainRoom);
             drawLines(ui, gainX, frame_ui::centerBaseline(top, 56, 15) - 9, 18, lines, 15, gainColor, true);
         }
+        // エコー除去がオフの間は自動音量調整もかかっていないので、覚えている値ではなくオフを出す
         const std::vector<Rect> gainHits =
-            frame_ui::drawSegmented(ui, gainRect, {t.on, t.off}, known ? (gain ? 0 : 1) : -1, gainEnabled);
+            frame_ui::drawSegmented(ui, gainRect, {t.on, t.off}, known ? (echo && gain ? 0 : 1) : -1, gainEnabled);
         addButton({PanelAction::GainOn}, gainHits[0]);
         addButton({PanelAction::GainOff}, gainHits[1]);
 
