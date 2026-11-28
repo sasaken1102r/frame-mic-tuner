@@ -115,6 +115,7 @@ struct UiText {
     const char* stageOut;          ///< 通り道の最後（アプリへ）
     const char* chainIdle;         ///< 使っていないときの説明
     const char* chainUnknown;      ///< つながりを読めない
+    const char* gainHint;          ///< 細かく調整のエコー除去の行の下の説明（自動音量はエコー除去の中にある）
     // ---- 声のチェック ----
     const char* voiceTitle;        ///< 声のチェック
     const char* voiceHint;         ///< 声のチェックの説明

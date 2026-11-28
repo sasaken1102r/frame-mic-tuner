@@ -106,6 +106,7 @@ const UiText kJapanese = {
     // つながり
     "つながり", "マイク", "音質補正", "エコー除去", "ノイズ除去", "アプリへ", "使っていないので処理はお休み中",
     "つながりを読めません",
+    "自動音量はエコー除去の中にあるので、エコー除去がオンのときだけ働きます",
     // 声のチェック
     "声のチェック", "アプリに届く音を録って聞き比べ", "録音", "停止", "録音中", "秒", "%.1f 秒・残り %.1f 秒",
     "「録音」で最大 10 秒。いま使っているマイクで録ります", "まだ録音はありません", "%s のマイク（処理なし）", "設定不明",
@@ -200,6 +201,7 @@ const UiText kEnglish = {
     // Signal path
     "Signal path", "Mic", "EQ", "Echo cancel", "Noise filter", "To apps", "Not in use, filters are resting",
     "Can't read the path",
+    "Auto gain is built into Echo cancel, so it only works while Echo cancel is on",
     // Voice check
     "Voice check", "Record what apps hear, then compare", "Record", "Stop", "Recording", "s", "%.1f s · %.1f s left",
     "Record up to 10 s with the mic in use", "No recordings yet", "%s mic (no processing)", "Unknown setting",
@@ -293,6 +295,7 @@ const UiText kSimplifiedChinese = {
     "回声消除开", "回声消除关", "・噪声抑制开", "・",
     // 信号链路
     "信号链路", "麦克风", "音质补正", "回声消除", "噪声抑制", "输出", "未在使用，处理已暂停", "无法读取信号链路",
+    "自动增益是回声消除的一部分，只在回声消除开启时工作",
     // 声音检查
     "声音检查", "录下麦克风收音，对比试听", "录音", "停止", "录音中", "秒", "%.1f 秒 · 剩余 %.1f 秒",
     "按“录音”最多录 10 秒，使用当前的麦克风", "还没有录音", "%s 麦克风（无处理）", "设置未知",
@@ -387,6 +390,7 @@ const UiText kGerman = {
     // Signalweg
     "Signalweg", "Mikrofon", "EQ", "Echofilter", "Rauschfilter", "Zu Apps", "Nicht in Gebrauch, Filter ruhen",
     "Signalweg nicht lesbar",
+    "Der Auto-Pegel steckt im Echofilter und wirkt nur, solange dieser an ist",
     // Stimmtest
     "Stimmtest", "Nimm auf, was Apps hören, und vergleiche", "Aufnehmen", "Stopp", "Aufnahme", "s", "%.1f s · noch %.1f s",
     "Bis zu 10 s mit dem aktiven Mikrofon aufnehmen", "Noch keine Aufnahmen", "Mikrofon %s (ohne Verarbeitung)", "Unbekannte Einstellung",
@@ -482,6 +486,7 @@ const UiText kFrench = {
     // Chemin
     "Chemin du signal", "Micro", "EQ", "Annulation d'écho", "Filtre de bruit", "Vers les apps", "Inutilisé, les filtres se reposent",
     "Chemin illisible",
+    "Le gain auto fait partie de l'annulation d'écho : il ne marche que si elle est active",
     // Voix
     "Contrôle de voix", "Enregistre ce que les apps entendent, puis compare", "Enregistrer", "Stop", "Enregistrement", "s",
     "%.1f s · %.1f s restantes",
@@ -579,6 +584,7 @@ const UiText kSpanish = {
     // Ruta
     "Ruta de la señal", "Micrófono", "EQ", "Cancelación de eco", "Filtro de ruido", "A las apps", "Sin uso, los filtros descansan",
     "No se puede leer la ruta",
+    "La ganancia auto va dentro de la cancelación de eco: solo funciona con ella activada",
     // Voz
     "Prueba de voz", "Graba lo que oyen las apps y compáralo", "Grabar", "Parar", "Grabando", "s", "%.1f s · quedan %.1f s",
     "Graba hasta 10 s con el micrófono en uso", "Aún no hay grabaciones", "Micrófono %s (sin procesar)", "Ajuste desconocido",
@@ -674,6 +680,7 @@ const UiText kItalian = {
     // Percorso
     "Percorso del segnale", "Microfono", "EQ", "Cancellazione eco", "Filtro rumore", "Alle app", "Non in uso, i filtri riposano",
     "Percorso illeggibile",
+    "Il guadagno auto fa parte della cancellazione eco: funziona solo quando è attiva",
     // Voce
     "Controllo voce", "Registra ciò che sentono le app e confronta", "Registra", "Stop", "Registrazione", "s", "%.1f s · %.1f s rimasti",
     "Registra fino a 10 s con il microfono in uso", "Ancora nessuna registrazione", "Microfono %s (senza elaborazione)", "Impostazione sconosciuta",
