@@ -276,7 +276,7 @@ Valve のノイズ除去（LADSPA `noise_suppressor_mono` = RNNoise ＋声の判
 
 ## エコー除去の自動音量調整
 
-Valve のエコー除去（`libpipewire-module-echo-cancel` の `aec-webrtc`）は、WebRTC の自動音量調整（`webrtc.gain_control2`）も入っている。話している間にマイクの音量が上がったり下がったりするので、エコー除去は残したまま、自動音量調整だけを切れるようにした。
+Valve のエコー除去（`libpipewire-module-echo-cancel` の `aec-webrtc`）は、WebRTC の自動音量調整（`webrtc.gain_control2`）も入っている。そのため、エコー除去を使う Frame のスピーカーと、使わないイヤホン（USB-C のドングルなど）とで、アプリに届く声の大きさが変わり、VRChat などでは出口を替えるたびにマイクの音量を合わせ直すことになる（スピーカーで 50% のとき、ドングルでは 100% 近く要る）。エコー除去は残したまま、自動音量調整だけを切れるようにした。上げた音量をすぐあとで下げる手間も無くなる。
 
 - `aec-webrtc` には動いている途中で設定を変える口（`set_params`）が無い。そこで、一定の雑音を消すと同じ別の PipeWire のプロセス（`contrib/denoise/frame-mic-denoise.conf`）に、もう 1 つ `libpipewire-module-echo-cancel` を置いた。設定は Valve の本体（`/etc/pipewire/microphone-filter-chain/microphone-filter-chain-echo-cancel-cpu.conf` の `echo_cancel_*`）の `aec.args` を写し、`webrtc.gain_control2.enabled = false` だけ変えた。PipeWire・WirePlumber の再起動も `/etc` の書き換えも要らない（`/etc` は読んで写しただけ）
 - ノード: マイク側 `frame_mic_ec_capture` / `frame_mic_ec_source`（smart filter の名前 `frame-mic-tuner-ec-source`、行き先は内蔵マイク）、消す音の側 `frame_mic_ec_sink` / `frame_mic_ec_filter_chain_playback`（`frame-mic-tuner-ec-sink`、行き先は Frame のスピーカー `Speaker playback`、`filter.smart.after = [ filter-chain-sink ]`）。どれも最初は `filter.smart.disabled = true`・`steamos.mic_filter = true`。Valve の `spatial-node-config.lua` は名前に「filter」と「chain」の両方が入るノードを飛ばすので、消す音の側の出口はその形の名前にした
@@ -285,6 +285,7 @@ Valve のエコー除去（`libpipewire-module-echo-cancel` の `aec-webrtc`）�
 - アプリ: パネルの「細かく調整」のエコー除去の右に「自動音量」のオン・オフ。エコー除去の中のものなので、エコー除去がオフの間は灰色で、覚えている値にかかわらずオフと出す（自動音量調整もかかっていないため。エコー除去をオンに戻すと覚えている値に戻る）。出口ごとに覚え（`auto_gain`、無ければ true）、プリセットはどちらもオン（SteamOS と同じ）。「かんたん」のスピーカーのプリセットは、自動音量調整がオンのときだけ一致する（イヤホンはエコー除去がオフなので見ない）。まとめて書くとき（`ApplySettings`）は、要らない方のエコー除去が一瞬でも入らないように、自動音量調整をエコー除去より先に書く
 - 入れたあと再起動するまでは、`frame-mic.auto-gain` が無い（「not found」）。パネルは「自動音量」を灰色にして、一番下の行に「自動音量の切り替えは Frame を再起動すると使えます」と出す。オフなのにノードが無い（サービスが止まっている）ときは、赤で「自動音量オフのエコー除去が動いていません（frame-mic-tuner-denoise.service）」
 - install.sh は、走っている WirePlumber が `frame-mic.auto-gain` を知っている（この版の tracker が動いている）ときだけサービスを起動する。前の tracker は `frame_mic_ec_*` を知らないので、再起動前に動かすと何が起きるか決まらないため（0.4.0 の門は `frame-mic.steady-noise` だったので、0.4.0 から上げた人は、再起動するまで一定の雑音を消すも使えない）。再起動のあとは `pipewire.service` といっしょに起動する
+- 測った値（2026-11-28、SteamOS 20261118、被って、数を 1〜10 声に出して数えるのを 1 回ずつ。話す大きさはそろえた）: マイクの生の音（`alsa_input...HiFi__Mic__source` の FL。上の「段ごとの音」のとおり `pw-link` で直につなぐ）と、アプリに届く音（既定のマイクを `pw-record`）の差。声の帯域（150 Hz〜4 kHz）で、Valve のエコー除去（自動音量調整あり）が −2.6〜−2.9 dB、自動音量調整なしが −8.9〜−9.1 dB、エコー除去オフ（ドングルと同じつながり）が −8.5〜−9.0 dB。自動音量調整が約 6 dB 上げていて、なしの方はエコー除去オフと 0.6 dB 以内でそろう。150 Hz より下だけは、なしの方がエコー除去オフより 4.5 dB 低い（WebRTC のハイパスフィルターと思われる）。どれも割れは無し（ピークは −18 / −25 / −22 dBFS）。話し始めの 1 秒とその後で、差はほぼ変わらない（−3.4 / −2.9 dB）。自動音量調整は話す大きさで上げる量が変わるので、0.3.4 のときの +15〜20 dB（話す大きさをそろえていない）とは比べられない
 
 ## 声のチェック
 
