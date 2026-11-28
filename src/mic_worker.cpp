@@ -8,10 +8,11 @@
 #include <cmath>
 #include <cstdio>
 
-MicCommand MicCommand::applySettings(bool echo, NoiseMode mode, bool withNsParams, double vad, double grace,
+MicCommand MicCommand::applySettings(bool echo, bool autoGain, NoiseMode mode, bool withNsParams, double vad, double grace,
                                      double steadyDb, bool onlyIfChanged) {
     MicCommand command {Kind::ApplySettings};
     command.value = echo;
+    command.autoGain = autoGain;
     command.ns = mode == NoiseMode::Valve;
     command.steady = mode == NoiseMode::Steady;
     command.withNsParams = withNsParams;
@@ -171,6 +172,7 @@ uint64_t MicWorker::version() const {
 bool MicWorker::execute(const MicCommand& command, int nodeId) {
     switch (command.kind) {
         case MicCommand::Kind::SetEcho: return writeSetting(kEchoCancelKey, command.value);
+        case MicCommand::Kind::SetGain: return writeSetting(kAutoGainKey, command.value);
         case MicCommand::Kind::SetNs: return writeSetting(kNoiseSuppressionKey, command.value);
         case MicCommand::Kind::SetAutostart: return writeAutostart(command.value);
         case MicCommand::Kind::SetNsParams: {
@@ -368,9 +370,11 @@ void MicWorker::run() {
                 continue;
             }
             if (command.kind == MicCommand::Kind::ApplySettings) {
-                // 出口の設定: エコー除去 → ノイズ除去 → 強さの順に書き、書き終わってから 1 回だけ読み直す
-                // （途中の値を表示しない）。片方が失敗しても、ほかは書く。自動の切り替えでは、今と同じものは書かない
+                // 出口の設定: 自動音量調整 → エコー除去 → ノイズ除去 → 強さの順に書き、書き終わってから 1 回だけ読み直す
+                // （途中の値を表示しない。自動音量調整を先に書くのは、エコー除去を入れるときに切りたい方が一瞬でも入らないため）。
+                // 片方が失敗しても、ほかは書く。自動の切り替えでは、今と同じものは書かない
                 const bool skip = command.onlyIfChanged;
+                bool gainOk = true;
                 bool echoOk = true;
                 bool nsOk = true;
                 bool steadyOk = true;
@@ -379,6 +383,10 @@ void MicWorker::run() {
                 bool wroteParams = false;
                 int appliedSteadyNode = -1;
                 bool wroteSteady = false;
+                // 自動音量調整の設定が無い（Frame をまだ再起動していない）ときは書かない（使えるようになるまでオン）
+                if (!before.gainMissing && (!skip || !before.gainKnown || before.gain != command.autoGain)) {
+                    gainOk = writeSetting(kAutoGainKey, command.autoGain);
+                }
                 if (!skip || !before.echoKnown || before.echo != command.value) {
                     echoOk = writeSetting(kEchoCancelKey, command.value);
                 }
@@ -425,14 +433,16 @@ void MicWorker::run() {
                 if (appliedSteadyNode >= 0) appliedSteadyNodeId_ = appliedSteadyNode;
                 if (wroteSteady) noteSteady(fresh.steadyParams, appliedSteadyNode, command.steadyDb);
                 const bool noiseOk = nsOk && steadyOk;
-                if (echoOk && noiseOk) {
+                if (echoOk && noiseOk && gainOk) {
                     fresh.writeError = paramsOk ? MicError::None : MicError::WriteNsParams;
                 } else if (!echoOk && !noiseOk) {
                     fresh.writeError = MicError::WriteSettings;
                 } else if (!echoOk) {
                     fresh.writeError = MicError::WriteEcho;
-                } else {
+                } else if (!noiseOk) {
                     fresh.writeError = nsOk ? MicError::WriteSteady : MicError::WriteNs;
+                } else {
+                    fresh.writeError = MicError::WriteGain;
                 }
                 ++completed_;
                 store(fresh);
@@ -471,6 +481,7 @@ void MicWorker::run() {
                 switch (command.kind) {
                     case MicCommand::Kind::SetNsParams: fresh.writeError = MicError::WriteNsParams; break;
                     case MicCommand::Kind::SetSteadyDb: fresh.writeError = MicError::WriteSteadyDb; break;
+                    case MicCommand::Kind::SetGain: fresh.writeError = MicError::WriteGain; break;
                     case MicCommand::Kind::SetMute:
                         fresh.writeError = command.value ? MicError::WriteMuteOn : MicError::WriteMute;
                         break;

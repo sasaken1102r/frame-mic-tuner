@@ -67,7 +67,8 @@ ChainStage stageOf(const std::string& prefix) {
         stage.kind = ChainStage::Kind::Eq;
     } else if (startsWith(prefix, kSteadyStagePrefix)) {
         stage.kind = ChainStage::Kind::SteadyNoise;
-    } else if (startsWith(prefix, "echo_cancel")) {
+    } else if (startsWith(prefix, "echo_cancel") || startsWith(prefix, kOwnEchoStagePrefix)) {
+        // Valve のエコー除去と、自動音量調整なしの方（どちらか 1 つだけが入る）
         stage.kind = ChainStage::Kind::EchoCancel;
     } else if (startsWith(prefix, "ns") || startsWith(prefix, "dsp")) {
         stage.kind = ChainStage::Kind::NoiseSuppression;
@@ -250,9 +251,12 @@ void parseSettingsList(const std::string& text, MicState& state) {
     state.nsKnown = parseSettingFromList(text, kNoiseSuppressionKey, state.ns);
     state.steadyKnown = parseSettingFromList(text, kSteadyNoiseKey, state.steady);
     if (!state.steadyKnown) state.steady = false;
-    // 一定の雑音を消すだけが無い = 入れたあと Frame をまだ再起動していない（WirePlumber が前の 90-frame-mic.conf のまま）。
-    // ほかの 2 つは使えるので、失敗にはしない
+    state.gainKnown = parseSettingFromList(text, kAutoGainKey, state.gain);
+    if (!state.gainKnown) state.gain = true;
+    // 一定の雑音を消す・自動音量調整だけが無い = 入れたあと Frame をまだ再起動していない（WirePlumber が前の
+    // 90-frame-mic.conf のまま）。ほかの 2 つは使えるので、失敗にはしない
     state.steadyMissing = state.echoKnown && state.nsKnown && !state.steadyKnown;
+    state.gainMissing = state.echoKnown && state.nsKnown && !state.gainKnown;
     if (!state.echoKnown || !state.nsKnown) {
         // 一覧に無い = WirePlumber に frame-mic-tracker と 90-frame-mic.conf が入っていない
         std::fprintf(stderr, "[マイク] 設定 %s / %s が一覧にありません\n", kEchoCancelKey, kNoiseSuppressionKey);
@@ -316,9 +320,10 @@ bool sameMicState(const MicState& a, const MicState& b) {
     const bool sameSteady = a.steadyKnown == b.steadyKnown && a.steady == b.steady && a.steadyMissing == b.steadyMissing &&
                             sa.nodeKnown == sb.nodeKnown && sa.nodeId == sb.nodeId && sa.dbKnown == sb.dbKnown &&
                             sa.db == sb.db && a.steadyApplied == b.steadyApplied;
+    const bool sameGain = a.gainKnown == b.gainKnown && a.gain == b.gain && a.gainMissing == b.gainMissing;
     return a.loaded == b.loaded && a.echoKnown == b.echoKnown && a.echo == b.echo && a.nsKnown == b.nsKnown &&
            a.ns == b.ns && a.linksKnown == b.linksKnown && a.inUse == b.inUse && a.muteKnown == b.muteKnown &&
-           a.muted == b.muted && a.autostart == b.autostart && sameNs && a.nsApplied == b.nsApplied && sameSteady &&
+           a.muted == b.muted && a.autostart == b.autostart && sameNs && a.nsApplied == b.nsApplied && sameSteady && sameGain &&
            a.devices == b.devices && a.readError == b.readError && a.writeError == b.writeError;
 }
 

@@ -135,7 +135,7 @@ bool writeDefaultNode(int nodeId, const std::string& nodeName, bool sink);
 
 /** 出口の種類（新しい出口の最初の設定と、絵）。 */
 enum class OutputKind {
-    Speaker,    ///< Frame のスピーカー（エコー除去オン・ノイズ除去オフから始める）
+    Speaker,    ///< Frame のスピーカー（エコー除去オン・自動音量調整オン・ノイズ除去オフから始める）
     Earphones,  ///< それ以外（イヤホン・ヘッドホン。エコー除去オフ・ノイズ除去オフから始める）
 };
 
@@ -162,6 +162,7 @@ struct OutputProfile {
     std::string name;                     ///< 表示名（最後に見たときの機器の説明）
     OutputKind kind = OutputKind::Earphones;
     bool echo = false;                    ///< エコー除去
+    bool autoGain = true;                 ///< エコー除去の自動音量調整（キーは auto_gain。エコー除去がオフなら効かない）
     bool ns = false;                      ///< Valve のノイズ除去
     double nsVad = 23.0;                  ///< ノイズ除去の判定の厳しさ（%）
     double nsGrace = 500.0;               ///< ノイズ除去の余韻（ms）
@@ -171,7 +172,7 @@ struct OutputProfile {
     bool keepAwake = false;               ///< 音の頭切れを防ぐ（聞こえない音を流し続ける。keep_awake.h）
 
     /**
-     * @return エコー除去・ノイズ除去の種類・強さが同じなら true（名前と日付は比べない。頭切れを防ぐもマイクの設定ではないので比べない）
+     * @return エコー除去・自動音量調整・ノイズ除去の種類・強さが同じなら true（名前と日付は比べない。頭切れを防ぐもマイクの設定ではないので比べない）
      */
     bool sameSettings(const OutputProfile& other) const;
 

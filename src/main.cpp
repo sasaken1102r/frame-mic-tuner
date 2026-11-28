@@ -107,6 +107,9 @@ struct Options {
     double fakeSteadyDb = kSteadyDbDefault;
     bool fakeSteadyMissing = false;   ///< 設定がまだ無い（入れたあと Frame を再起動していない）
     bool fakeDenoiseStopped = false;  ///< ノードが無い（frame-mic-tuner-denoise.service が動いていない）
+    // 自動音量調整のダミー（--dump-png 用）
+    bool fakeGain = true;
+    bool fakeGainMissing = false;     ///< 設定がまだ無い（入れたあと Frame を再起動していない）
     // ノイズ除去の強さのダミーと、バーをドラッグしている見た目（--dump-png 用）
     double fakeNsVad = kNsVadDefault;
     double fakeNsGrace = kNsGraceDefault;
@@ -196,6 +199,7 @@ void printUsage() {
         "                        すでに常駐していれば、そちらのパネルを開いて終わる\n"
         "  --print               OpenVR なしで、今の値・マイク使用中か・つながりを表示して終わる\n"
         "  --set-echo on|off     エコー除去を切り替えてから --print と同じ表示をする\n"
+        "  --set-gain on|off     エコー除去の自動音量調整（frame-mic.auto-gain）を切り替えてから表示する\n"
         "  --set-ns on|off       ノイズ除去を切り替えてから表示する\n"
         "  --set-autostart on|off  SteamVR と一緒に起動（systemctl --user enable/disable）を切り替えてから表示する\n"
         "  --set-ns-vad N        ノイズ除去の判定の厳しさ（0〜99%%）をその場でかけてから表示する（保存はしない）\n"
@@ -215,7 +219,7 @@ void printUsage() {
         "      --fake-loading    まだ読んでいない状態\n"
         "      --fake-muted      既定のマイクがミュートされている（ミュート中のバッジと帯）\n"
         "      --fake-autostart on|off|missing|unknown  自動起動の状態（missing = ユニットファイルが無い）\n"
-        "      --fake-error read|not-installed|links|write|write-echo|write-ns|write-steady|write-steady-db|\n"
+        "      --fake-error read|not-installed|links|write|write-echo|write-ns|write-steady|write-gain|write-steady-db|\n"
         "                   write-mute|write-mute-on|write-output|write-input|autostart  赤い失敗の表示（write-mute は解除の失敗）\n"
         "      --fake-recording  録音中（メーター・経過）の見た目\n"
         "      --fake-history N  ダミーの履歴を N 件（0〜5）\n"
@@ -232,6 +236,8 @@ void printUsage() {
         "      --fake-steady-db N    ダミーの消す強さ（既定 20）\n"
         "      --fake-steady-missing  一定の雑音を消すの設定がまだ無い（入れたあと Frame を再起動していない）\n"
         "      --fake-denoise-stopped  一定の雑音を消すのノードが無い（frame-mic-tuner-denoise.service が止まっている）\n"
+        "      --fake-gain on|off    ダミーの自動音量調整（既定 on）\n"
+        "      --fake-gain-missing   自動音量調整の設定がまだ無い（入れたあと Frame を再起動していない）\n"
         "      --preview-drag-steady N  消す強さのバーを N までドラッグしている見た目\n"
         "      --fake-output speaker|earphones  今の音の出口（Frame のスピーカー / AB13X USB Audio）\n"
         "      --fake-past-outputs N  前に使った（いまはつながっていない）出口の数（既定 3。多いと一覧がスクロールする）\n"
@@ -291,11 +297,12 @@ bool parseOptions(int argc, char** argv, Options& options) {
         bool value = false;
         if (arg == "--print") {
             options.mode = Options::Mode::Print;
-        } else if ((arg == "--set-echo" || arg == "--set-ns" || arg == "--set-autostart") && hasNext) {
+        } else if ((arg == "--set-echo" || arg == "--set-gain" || arg == "--set-ns" || arg == "--set-autostart") && hasNext) {
             if (!parseOnOff(argv[++i], value)) return false;
-            const MicCommand::Kind kind = arg == "--set-echo" ? MicCommand::Kind::SetEcho
-                                          : arg == "--set-ns" ? MicCommand::Kind::SetNs
-                                                              : MicCommand::Kind::SetAutostart;
+            const MicCommand::Kind kind = arg == "--set-echo"   ? MicCommand::Kind::SetEcho
+                                          : arg == "--set-gain" ? MicCommand::Kind::SetGain
+                                          : arg == "--set-ns"   ? MicCommand::Kind::SetNs
+                                                                : MicCommand::Kind::SetAutostart;
             options.sets.push_back({kind, value});
             options.mode = Options::Mode::Print;
         } else if (arg == "--dump-png" && hasNext) {
@@ -350,6 +357,12 @@ bool parseOptions(int argc, char** argv, Options& options) {
             options.fake = true;
         } else if (arg == "--fake-denoise-stopped") {
             options.fakeDenoiseStopped = true;
+            options.fake = true;
+        } else if (arg == "--fake-gain" && hasNext) {
+            if (!parseOnOff(argv[++i], options.fakeGain)) return false;
+            options.fake = true;
+        } else if (arg == "--fake-gain-missing") {
+            options.fakeGainMissing = true;
             options.fake = true;
         } else if (arg == "--preview-drag-steady" && hasNext) {
             options.previewDrag = PanelAction::SteadySlider;
@@ -471,6 +484,8 @@ bool parseOptions(int argc, char** argv, Options& options) {
                 options.fakeError = MicError::WriteNs;
             } else if (kind == "write-steady") {
                 options.fakeError = MicError::WriteSteady;
+            } else if (kind == "write-gain") {
+                options.fakeError = MicError::WriteGain;
             } else if (kind == "write-steady-db") {
                 options.fakeError = MicError::WriteSteadyDb;
             } else if (kind == "write-mute") {
@@ -486,7 +501,7 @@ bool parseOptions(int argc, char** argv, Options& options) {
             } else {
                 std::fprintf(stderr,
                              "--fake-error は read / not-installed / links / write / write-echo / write-ns / write-steady / "
-                             "write-steady-db / write-mute / "
+                             "write-gain / write-steady-db / write-mute / "
                              "write-mute-on / write-output / write-input / autostart です: %s\n",
                              kind.c_str());
                 return false;
@@ -612,6 +627,19 @@ std::string steadyValueText(const MicState& state, const char* onWord, const cha
 }
 
 /**
+ * 自動音量調整の設定の値を日本語にする（ログ・--print 用）。
+ * @param state 状態
+ * @param onWord オンのときの言葉
+ * @param offWord オフのときの言葉
+ * @return 文言（設定が無いときは、Frame の再起動が要る旨）
+ */
+std::string gainValueText(const MicState& state, const char* onWord, const char* offWord) {
+    if (state.gainKnown) return state.gain ? onWord : offWord;
+    if (state.gainMissing) return "設定がありません（入れたあと Frame を再起動すると使えます。それまではオン）";
+    return "読めません";
+}
+
+/**
  * 表示する状態が変わったときに、ログへ 1 行出す（外から変えられたときの追従をあとで確かめるため）。
  * @param state 状態
  */
@@ -620,9 +648,11 @@ void logState(const MicState& state) {
     const UiText& text = uiText(Language::Ja);
     const MicError error = state.writeError != MicError::None ? state.writeError : state.readError;
     const NsParams& ns = state.nsParams;
-    std::fprintf(stderr, "[マイク] 表示を更新: エコー除去 %s・ノイズ除去 %s（%s）・一定の雑音を消す %s（%s）・%s・%s・%s・自動起動 %s%s%s\n",
-                 onOff(state.echoKnown, state.echo), onOff(state.nsKnown, state.ns), describeNsParams(ns).c_str(),
-                 steadyValueText(state, "オン", "オフ").c_str(), describeSteadyParams(state.steadyParams).c_str(),
+    std::fprintf(stderr,
+                 "[マイク] 表示を更新: エコー除去 %s・自動音量調整 %s・ノイズ除去 %s（%s）・一定の雑音を消す %s（%s）・%s・%s・%s・自動起動 %s%s%s\n",
+                 onOff(state.echoKnown, state.echo), gainValueText(state, "オン", "オフ").c_str(), onOff(state.nsKnown, state.ns),
+                 describeNsParams(ns).c_str(), steadyValueText(state, "オン", "オフ").c_str(),
+                 describeSteadyParams(state.steadyParams).c_str(),
                  !state.linksKnown ? "使用中か不明" : (state.inUse ? "使用中" : "未使用"),
                  !state.muteKnown ? "ミュート不明" : (state.muted ? "ミュート中" : "ミュートなし"),
                  describeChain(state).c_str(), autostartName(state.autostart), error != MicError::None ? "・失敗: " : "",
@@ -632,15 +662,15 @@ void logState(const MicState& state) {
 /**
  * 出口ごとの設定を短い日本語にする（--print 用）。
  * @param p 設定
- * @return 例:「エコー除去オン・ノイズ除去オフ・23%/500ms・一定の雑音を消すオフ・20dB・頭切れ防止オフ（スピーカー、最後に使った日 2026-10-10）」
+ * @return 例:「エコー除去オン・自動音量調整オン・ノイズ除去オフ・23%/500ms・一定の雑音を消すオフ・20dB・頭切れ防止オフ（スピーカー、最後に使った日 2026-10-10）」
  */
 std::string describeProfile(const OutputProfile& p) {
-    char text[320];
+    char text[352];
     const NoiseMode mode = p.noiseMode();
     std::snprintf(text, sizeof(text),
-                  "エコー除去%s・ノイズ除去%s・%.0f%%/%.0fms・一定の雑音を消す%s・%.0fdB・頭切れ防止%s（%s、最後に使った日 %s）",
-                  p.echo ? "オン" : "オフ", mode == NoiseMode::Valve ? "オン" : "オフ", p.nsVad, p.nsGrace,
-                  mode == NoiseMode::Steady ? "オン" : "オフ", p.steadyDb, p.keepAwake ? "オン" : "オフ",
+                  "エコー除去%s・自動音量調整%s・ノイズ除去%s・%.0f%%/%.0fms・一定の雑音を消す%s・%.0fdB・頭切れ防止%s（%s、最後に使った日 %s）",
+                  p.echo ? "オン" : "オフ", p.autoGain ? "オン" : "オフ", mode == NoiseMode::Valve ? "オン" : "オフ", p.nsVad,
+                  p.nsGrace, mode == NoiseMode::Steady ? "オン" : "オフ", p.steadyDb, p.keepAwake ? "オン" : "オフ",
                   p.kind == OutputKind::Speaker ? "スピーカー" : "イヤホン", p.lastUsed.empty() ? "不明" : p.lastUsed.c_str());
     return text;
 }
@@ -697,6 +727,11 @@ void printOutputs(const MicState& state, const Config& config) {
 void printState(const MicState& state) {
     const auto onOff = [](bool known, bool value) { return known ? (value ? "オン（true）" : "オフ（false）") : "読めません"; };
     std::printf("エコー除去 (%s): %s\n", kEchoCancelKey, onOff(state.echoKnown, state.echo));
+    std::printf("エコー除去の自動音量調整 (%s): %s\n", kAutoGainKey, gainValueText(state, "オン（true）", "オフ（false）").c_str());
+    if (state.gainKnown && !state.gain && state.echoKnown && state.echo && !state.steadyParams.nodeKnown) {
+        std::printf("自動音量調整なしのエコー除去が動いていません（%s）。いまは Valve のエコー除去（自動音量調整あり）です\n",
+                    kDenoiseServiceName);
+    }
     std::printf("ノイズ除去 (%s): %s\n", kNoiseSuppressionKey, onOff(state.nsKnown, state.ns));
     std::printf("ノイズ除去の強さ: %s\n", describeNsParams(state.nsParams).c_str());
     std::printf("一定の雑音を消す (%s): %s\n", kSteadyNoiseKey, steadyValueText(state, "オン（true）", "オフ（false）").c_str());
@@ -705,11 +740,12 @@ void printState(const MicState& state) {
         std::printf("ノイズ除去と一定の雑音を消すが両方オンです（パネルは一定の雑音を消すとして扱い、次にかけるときノイズ除去をオフにします）\n");
     }
     if (state.echoKnown && state.nsKnown) {
-        // プリセット: イヤホン = エコー除去オフ・ノイズ除去オフ、スピーカー = エコー除去オン・ノイズ除去オフ
+        // プリセット: イヤホン = エコー除去オフ・ノイズ除去オフ、スピーカー = エコー除去オン（自動音量調整オン）・ノイズ除去オフ
         // （ノイズ除去オフ = Valve のノイズ除去も、一定の雑音を消すも使わない）
         const bool noise = state.ns || (state.steadyKnown && state.steady);
-        const char* preset = noise ? "細かく調整した設定（どちらのプリセットとも違う）"
-                                   : (state.echo ? "スピーカー" : "イヤホン");
+        const bool custom = noise || (state.echo && !state.gain);
+        const char* preset = custom ? "細かく調整した設定（どちらのプリセットとも違う）"
+                                    : (state.echo ? "スピーカー" : "イヤホン");
         std::printf("プリセット: %s\n", preset);
     }
     std::printf("マイク: %s\n", !state.linksKnown ? "読めません" : (state.inUse ? "使用中" : "未使用"));
@@ -739,6 +775,7 @@ int runPrint(const Options& options) {
         bool ok = false;
         switch (command.kind) {
             case MicCommand::Kind::SetEcho: ok = writeSetting(kEchoCancelKey, command.value); break;
+            case MicCommand::Kind::SetGain: ok = writeSetting(kAutoGainKey, command.value); break;
             case MicCommand::Kind::SetNs: {
                 // ノイズ除去と一定の雑音を消すは、どちらか 1 つ。オンにするときは、一定の雑音を消すが今オンなら先にオフにする
                 if (command.value) {
@@ -762,7 +799,12 @@ int runPrint(const Options& options) {
         }
         if (!ok) {
             writeError = command.kind == MicCommand::Kind::SetAutostart ? MicError::WriteAutostart
-                                                                         : MicError::WriteSettings;
+                         : command.kind == MicCommand::Kind::SetGain    ? MicError::WriteGain
+                                                                        : MicError::WriteSettings;
+            if (command.kind == MicCommand::Kind::SetGain) {
+                std::fprintf(stderr, "[自動音量調整] 切り替えられませんでした（設定 %s が無いときは、Frame の再起動が要ります）\n",
+                             kAutoGainKey);
+            }
         }
     }
     if (options.setNsVad || options.setNsGrace) {
@@ -891,6 +933,9 @@ MicState fakeState(const Options& options) {
     state.steadyMissing = options.fakeSteadyMissing;
     state.steadyKnown = !options.fakeSteadyMissing;
     state.steady = state.steadyKnown && options.fakeSteady;
+    state.gainMissing = options.fakeGainMissing;
+    state.gainKnown = !options.fakeGainMissing;
+    state.gain = !state.gainKnown || options.fakeGain;
     state.devices = fakeDevices(earphones, options.fakeExternalMic);
     state.linksKnown = true;
     state.inUse = !options.fakeIdle;
@@ -899,7 +944,11 @@ MicState fakeState(const Options& options) {
     if (state.inUse) {
         // tracker と同じ: 使用中は EQ が必ず入り、エコー除去・ノイズ除去は設定しだい
         state.chain.push_back({ChainStage::Kind::Eq, "eq"});
-        if (state.echo) state.chain.push_back({ChainStage::Kind::EchoCancel, "echo_cancel"});
+        if (state.echo) {
+            // 自動音量調整がオフで別プロセスが動いていれば、自動音量調整なしの方（tracker と同じ）
+            const bool own = !state.gain && !options.fakeDenoiseStopped;
+            state.chain.push_back({ChainStage::Kind::EchoCancel, own ? kOwnEchoStagePrefix : "echo_cancel"});
+        }
         if (state.ns) state.chain.push_back({ChainStage::Kind::NoiseSuppression, "ns"});
         if (state.steady && !options.fakeDenoiseStopped) {
             state.chain.push_back({ChainStage::Kind::SteadyNoise, kSteadyStagePrefix});
@@ -912,7 +961,8 @@ MicState fakeState(const Options& options) {
     state.nsParams.vad = options.fakeNsVad;
     state.nsParams.graceKnown = true;
     state.nsParams.grace = options.fakeNsGrace;
-    if (state.steadyKnown && !options.fakeDenoiseStopped) {
+    // 別プロセスは、この版の tracker が動いてから（Frame を再起動してから）動く（install.sh）
+    if (state.steadyKnown && state.gainKnown && !options.fakeDenoiseStopped) {
         state.steadyParams.nodeKnown = true;
         state.steadyParams.nodeId = 88;
         state.steadyParams.dbKnown = true;
@@ -920,7 +970,8 @@ MicState fakeState(const Options& options) {
     }
     const MicError error = options.fakeError;
     if (error == MicError::WriteSettings || error == MicError::WriteAutostart || error == MicError::WriteEcho ||
-        error == MicError::WriteNs || error == MicError::WriteSteady || error == MicError::WriteSteadyDb ||
+        error == MicError::WriteNs || error == MicError::WriteSteady || error == MicError::WriteGain ||
+        error == MicError::WriteSteadyDb ||
         error == MicError::WriteMute || error == MicError::WriteMuteOn || error == MicError::WriteOutput ||
         error == MicError::WriteInput) {
         state.writeError = error;
@@ -931,6 +982,8 @@ MicState fakeState(const Options& options) {
             state.nsKnown = false;
             state.steadyKnown = false;
             state.steadyMissing = false;
+            state.gainKnown = false;
+            state.gainMissing = false;
         }
         if (error == MicError::ReadLinks) {
             state.linksKnown = false;
@@ -956,6 +1009,7 @@ VoiceView fakeVoiceView(const Options& options) {
     const double lengths[] = {3.2, 5.0, 4.1, 2.4, 8.1};
     const bool echoes[] = {false, true, false, true, true};
     const bool nss[] = {false, false, false, true, false};
+    const bool gains[] = {true, false, true, true, true};  // 2 件目は「エコー除去オン・自動音量オフ」
     const bool speakers[] = {false, true, false, true, true};
     const bool externals[] = {false, false, true, false, false};
     const std::time_t now = std::time(nullptr);
@@ -965,6 +1019,7 @@ VoiceView fakeVoiceView(const Options& options) {
         clip->recordedAt = now - 90 * (i + 1);
         clip->echoKnown = clip->nsKnown = true;
         clip->echo = echoes[i];
+        clip->gain = gains[i];
         clip->ns = nss[i];
         clip->outputKnown = true;
         clip->outputSpeaker = speakers[i];
@@ -1123,6 +1178,7 @@ int runDumpPng(const Options& options) {
                 // 今の出口の覚えた設定は、今かかっている値と同じにしておく（自動でかけたあとの状態）
                 OutputProfile& active = config.outputs[model.state.devices.defaultOutputKey];
                 active.echo = model.state.echo;
+                active.autoGain = !model.state.gainKnown || model.state.gain;
                 active.ns = model.state.ns;
                 active.nsVad = model.state.nsParams.vad;
                 active.nsGrace = model.state.nsParams.grace;
@@ -1376,6 +1432,14 @@ int runSelfTest() {
         parseSettingsList("Settings:\n\n- Id: device.restore-profile\n  Value: true\t[Saved: true]\n", none);
         expect("wpctl: エコー除去・ノイズ除去も無い → 切り替えの仕組みが入っていない（再起動の印は立てない）",
                none.readError == MicError::NotInstalled && !none.steadyMissing && !none.steadyKnown);
+        // 自動音量調整: 一覧にある（オフ）とき・無い（Frame の再起動前。そのあいだ tracker は Valve のエコー除去 = オン）とき
+        MicState withGain;
+        parseSettingsList(list + "\n- Id: frame-mic.auto-gain\n  Default: true\n  Value: false\t[Saved: false]\n", withGain);
+        expect("wpctl: 一覧から自動音量調整 = false（設定がある）",
+               withGain.gainKnown && !withGain.gain && !withGain.gainMissing && withGain.readError == MicError::None);
+        expect("wpctl: 自動音量調整が無い（Frame の再起動前）→ 失敗にせず「再起動が要る」印・値はオンのまま",
+               oldConfig.gainMissing && !oldConfig.gainKnown && oldConfig.gain && oldConfig.readError == MicError::None);
+        expect("wpctl: 切り替えの仕組みも無い → 自動音量調整の「再起動が要る」印は立てない", !none.gainMissing);
     }
 
     // systemctl --user is-enabled の出力
@@ -1423,6 +1487,20 @@ int runSelfTest() {
                steadyChain.chain[1].kind == ChainStage::Kind::SteadyNoise &&
                steadyChain.chain[1].name == "frame_mic_denoise" &&
                describeChain(steadyChain) == "マイク → EQ → 一定の雑音を消す → 出力");
+
+    // 自動音量調整オフのエコー除去（frame-mic-tracker.lua が Valve の echo_cancel の代わりに入れる）
+    const std::string ownEchoLinks =
+        "alsa_input.platform-sound.HiFi__Mic__source:capture_FL\n"
+        "  |-> eq_capture:input_FL\n"
+        "eq_source:capture_MONO\n"
+        "  |-> frame_mic_ec_capture:input_MONO\n"
+        "frame_mic_ec_source:capture_MONO\n"
+        "  |-> alsa_loopback_stream.alsa_input.platform-sound.HiFi__Mic__source:input_MONO\n";
+    MicState ownEcho;
+    parseLinks(ownEchoLinks, ownEcho);
+    expect("pw-link: マイク → EQ → 自動音量調整オフのエコー除去 → 出力（エコー除去の段として数える）",
+           ownEcho.inUse && ownEcho.chain.size() == 2 && ownEcho.chain[1].kind == ChainStage::Kind::EchoCancel &&
+               ownEcho.chain[1].name == kOwnEchoStagePrefix);
 
     // 誰も録っていないとき（マイクから出力へ直接）
     const std::string idleLinks =
@@ -2239,29 +2317,30 @@ int runOverlay(const Options& options) {
      */
     const auto viewingLive = [&]() { return panel.viewingActive(); };
     /**
-     * プリセットにする。イヤホン = エコー除去オフ・ノイズ除去オフ、スピーカー = エコー除去オン・ノイズ除去オフ
-     * （ノイズ除去オフ = Valve のノイズ除去も、一定の雑音を消すも使わない）。
+     * プリセットにする。イヤホン = エコー除去オフ・ノイズ除去オフ、スピーカー = エコー除去オン（自動音量調整オン）・ノイズ除去オフ
+     * （ノイズ除去オフ = Valve のノイズ除去も、一定の雑音を消すも使わない。自動音量調整はどちらもオン = SteamOS と同じ）。
      * 今の出口なら、ワーカーがまとめて書いてから 1 回だけ読み直す。ノイズ除去のバーの値は変えない。
      * @param action Earphone か Speaker
      */
     const auto applyPreset = [&](PanelAction action) {
         const bool speaker = action == PanelAction::Speaker;
         std::fprintf(stderr, "[操作] %s（%s）\n",
-                     speaker ? "スピーカー（エコー除去オン・ノイズ除去オフ）" : "イヤホン（エコー除去オフ・ノイズ除去オフ）",
+                     speaker ? "スピーカー（エコー除去オン・自動音量調整オン・ノイズ除去オフ）" : "イヤホン（エコー除去オフ・ノイズ除去オフ）",
                      viewingLive() ? "今の出口" : panel.viewedOutputKey().c_str());
         if (viewingLive()) {
-            presetTicket = worker.request(MicCommand::applySettings(speaker, NoiseMode::Off, false, 0, 0, 0, false));
+            presetTicket = worker.request(MicCommand::applySettings(speaker, true, NoiseMode::Off, false, 0, 0, 0, false));
             outputSync.noteWrite(presetTicket);
             panel.holdPreset(action, nowSeconds() + 8.0);  // 書き込みが詰まっても、8 秒で実際の値の表示に戻す
         }
         changeViewedProfile([speaker](OutputProfile& p) {
             p.echo = speaker;
+            p.autoGain = true;
             p.setNoiseMode(NoiseMode::Off);
         });
     };
     /**
-     * エコー除去を切り替えるか、ノイズ除去の種類を選ぶ（表示している出口の設定として覚え、今の出口なら書く）。
-     * @param action EchoOn / EchoOff / NsOff（オフ）/ NsOn（Valve のノイズ除去）/ SteadyOn（一定の雑音を消す）
+     * エコー除去・自動音量調整を切り替えるか、ノイズ除去の種類を選ぶ（表示している出口の設定として覚え、今の出口なら書く）。
+     * @param action EchoOn / EchoOff / GainOn / GainOff / NsOff（オフ）/ NsOn（Valve のノイズ除去）/ SteadyOn（一定の雑音を消す）
      */
     const auto applyToggle = [&](PanelAction action) {
         if (action == PanelAction::EchoOn || action == PanelAction::EchoOff) {
@@ -2274,6 +2353,18 @@ int runOverlay(const Options& options) {
                 outputSync.noteWrite(worker.request(command));
             }
             changeViewedProfile([on](OutputProfile& p) { p.echo = on; });
+            return;
+        }
+        if (action == PanelAction::GainOn || action == PanelAction::GainOff) {
+            const bool on = action == PanelAction::GainOn;
+            std::fprintf(stderr, "[操作] 自動音量調整 %s（%s）\n", on ? "オン" : "オフ",
+                         viewingLive() ? "今の出口" : panel.viewedOutputKey().c_str());
+            if (viewingLive()) {
+                MicCommand command {MicCommand::Kind::SetGain};
+                command.value = on;
+                outputSync.noteWrite(worker.request(command));
+            }
+            changeViewedProfile([on](OutputProfile& p) { p.autoGain = on; });
             return;
         }
         const NoiseMode mode = action == PanelAction::SteadyOn ? NoiseMode::Steady
@@ -2446,6 +2537,8 @@ int runOverlay(const Options& options) {
             case PanelAction::Speaker: applyPreset(action); break;
             case PanelAction::EchoOn:
             case PanelAction::EchoOff:
+            case PanelAction::GainOn:
+            case PanelAction::GainOff:
             case PanelAction::NsOn:
             case PanelAction::NsOff:
             case PanelAction::SteadyOn: applyToggle(action); break;

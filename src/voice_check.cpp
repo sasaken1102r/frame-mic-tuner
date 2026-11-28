@@ -231,6 +231,8 @@ bool VoiceCheck::startRecording(const MicState& settings) {
     pending_.recordedAt = std::time(nullptr);
     pending_.echoKnown = settings.echoKnown;
     pending_.echo = settings.echo;
+    // 自動音量調整なしの方は frame-mic-tuner-denoise.service のプロセスにある（そのプロセスが動いていなければ Valve のまま）
+    pending_.gain = !(settings.gainKnown && !settings.gain && settings.steadyParams.nodeKnown);
     pending_.nsKnown = settings.nsKnown;
     pending_.ns = settings.ns;
     pending_.nsParamsKnown = settings.nsParams.vadKnown && settings.nsParams.graceKnown;

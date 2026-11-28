@@ -83,7 +83,7 @@ const UiText kJapanese = {
     "いまは「細かく調整」の設定を使っています",
     "%s をつないだので、覚えていた設定にしました", "元に戻す",
     // 細かく調整
-    "エコー除去", "スピーカーの音を消す", "ノイズ除去", "口の音など小さい音も消える", "オン", "オフ",
+    "エコー除去", "自動音量", "ノイズ除去", "口の音など小さい音も消える", "オン", "オフ",
     "判定の厳しさ", "低いほど声以外も通る", "余韻", "声のあと音を通す時間", "オフの間は効きません", "標準に戻す",
     "標準は 23%・500ms（SteamOS の値）",
     // 細かく調整: ノイズ除去の種類
@@ -93,6 +93,10 @@ const UiText kJapanese = {
     "一定の雑音を消すサービスが動いていません（frame-mic-tuner-denoise.service）",
     "一定の雑音を消す", "・一定の雑音を消す", "「一定の雑音を消す」の切り替えに失敗（wpctl）",
     "一定の雑音を消す強さを変えられません（pw-cli）",
+    // 細かく調整: エコー除去の自動音量
+    "自動音量の切り替えは Frame を再起動すると使えます",
+    "自動音量オフのエコー除去が動いていません（frame-mic-tuner-denoise.service）",
+    "・自動音量オフ", "自動音量の切り替えに失敗（wpctl）",
     // 外付けのマイク
     "いまは %s を使っています",
     "エコー除去・ノイズ除去がかかるのは、Frame の内蔵マイクだけです。このマイクの音は、そのままアプリに届きます。",
@@ -173,7 +177,7 @@ const UiText kEnglish = {
     "Using the Fine-tune settings now",
     "%s connected, so its saved settings are on", "Undo",
     // Fine-tune
-    "Echo cancel", "Removes speaker sound", "Noise filter", "Also cuts quiet mouth sounds", "On", "Off",
+    "Echo cancel", "Auto gain", "Noise filter", "Also cuts quiet mouth sounds", "On", "Off",
     "Strictness", "Lower lets more through", "Hold", "Sound kept after speech", "No effect while off", "Default",
     "Default: 23% · 500 ms (SteamOS)",
     // Fine-tune: noise filter type
@@ -183,6 +187,10 @@ const UiText kEnglish = {
     "The steady noise remover isn't running (frame-mic-tuner-denoise.service)",
     "Steady noise", ", steady noise filter on", "Steady noise switch failed (wpctl)",
     "Can't change the steady noise filter (pw-cli)",
+    // Fine-tune: echo cancel auto gain
+    "Restart the Frame to switch Auto gain",
+    "Echo cancel without auto gain isn't running (frame-mic-tuner-denoise.service)",
+    ", auto gain off", "Auto gain switch failed (wpctl)",
     // External mic
     "Using %s now",
     "Echo cancel and the noise filter only work on the Frame's built-in mic. This mic's sound goes to apps as it is.",
@@ -263,7 +271,7 @@ const UiText kSimplifiedChinese = {
     "当前使用“精细调整”的设置",
     "已连接 %s，已切换为记住的设置", "撤销",
     // 精细调整
-    "回声消除", "消除 Frame 扬声器的声音", "噪声抑制", "消除细小声音，输出会变沉闷", "开", "关",
+    "回声消除", "自动增益", "噪声抑制", "消除细小声音，输出会变沉闷", "开", "关",
     "麦克风灵敏度", "越低越容易触发收音", "收音保持时间", "说完后继续收音的时间", "关闭时不生效", "恢复默认",
     "默认 23% · 500ms（SteamOS 的值）",
     // 精细调整：噪声抑制的类型
@@ -273,6 +281,10 @@ const UiText kSimplifiedChinese = {
     "持续噪声消除服务未运行（frame-mic-tuner-denoise.service）",
     "消除持续噪声", "・消除持续噪声", "“消除持续噪声”切换失败（wpctl）",
     "无法修改持续噪声的消除强度（pw-cli）",
+    // 精细调整：回声消除的自动增益
+    "重启 Frame 后即可切换“自动增益”",
+    "无自动增益的回声消除未运行（frame-mic-tuner-denoise.service）",
+    "・自动增益关", "“自动增益”切换失败（wpctl）",
     // 外接麦克风
     "当前使用 %s",
     "回声消除和噪声抑制只对 Frame 内置麦克风生效。这个麦克风的声音会原样传给应用。",
@@ -352,7 +364,7 @@ const UiText kGerman = {
     "Gerade gelten die Einstellungen der Feinjustierung",
     "%s angeschlossen, also gilt die gespeicherte Einstellung", "Rückgängig",
     // Feinjustierung
-    "Echofilter", "Entfernt Lautsprecherklang", "Rauschfilter", "Schneidet auch leise Mundgeräusche", "Ein", "Aus",
+    "Echofilter", "Auto-Pegel", "Rauschfilter", "Schneidet auch leise Mundgeräusche", "Ein", "Aus",
     "Strenge", "Tiefer lässt mehr durch", "Nachklang", "Ton nach dem Sprechen", "Wirkt nicht, solange aus", "Standard",
     "Standard: 23 % · 500 ms (SteamOS)",
     // Feinjustierung: Art des Rauschfilters
@@ -362,6 +374,10 @@ const UiText kGerman = {
     "Der Dauerrauschfilter läuft nicht (frame-mic-tuner-denoise.service)",
     "Dauerrauschen", ", Dauerrauschfilter an", "Dauerrauschen-Umschaltung fehlgeschlagen (wpctl)",
     "Dauerrauschfilter nicht änderbar (pw-cli)",
+    // Feinjustierung: Auto-Pegel des Echofilters
+    "„Auto-Pegel“ lässt sich nach einem Neustart der Frame umschalten",
+    "Der Echofilter ohne Auto-Pegel läuft nicht (frame-mic-tuner-denoise.service)",
+    ", Auto-Pegel aus", "Auto-Pegel-Umschaltung fehlgeschlagen (wpctl)",
     // Externes Mikrofon
     "Gerade wird %s benutzt",
     "Echofilter und Rauschfilter gelten nur für das eingebaute Frame-Mikrofon. Der Ton dieses Mikrofons geht unverändert an Apps.",
@@ -442,7 +458,7 @@ const UiText kFrench = {
     "Les réglages fins sont utilisés pour l'instant",
     "%s est branché, donc son réglage enregistré est actif", "Annuler",
     // Réglage fin
-    "Annulation d'écho", "Retire le son des haut-parleurs", "Filtre de bruit", "Coupe aussi les sons de bouche faibles", "Oui", "Non",
+    "Annulation d'écho", "Gain auto", "Filtre de bruit", "Coupe aussi les sons de bouche faibles", "Oui", "Non",
     "Sévérité", "Plus bas, plus ça passe", "Tenue", "Son gardé après la voix", "Sans effet si désactivé", "Défaut",
     "Défaut : 23 % · 500 ms (SteamOS)",
     // Réglage fin : type de filtre de bruit
@@ -453,6 +469,10 @@ const UiText kFrench = {
     "Le filtre de bruit continu ne tourne pas (frame-mic-tuner-denoise.service)",
     "Bruit continu", ", filtre de bruit continu activé", "Basculement du bruit continu échoué (wpctl)",
     "Filtre de bruit continu non modifiable (pw-cli)",
+    // Réglage fin : gain auto de l'annulation d'écho
+    "Redémarre le Frame pour changer « Gain auto »",
+    "L'annulation d'écho sans gain auto ne tourne pas (frame-mic-tuner-denoise.service)",
+    ", gain auto désactivé", "Basculement du gain auto échoué (wpctl)",
     // Micro externe
     "Utilisation de %s",
     "L'annulation d'écho et le filtre de bruit ne valent que pour le micro intégré du Frame. Le son de ce micro va aux apps tel quel.",
@@ -535,7 +555,7 @@ const UiText kSpanish = {
     "%s conectado, así que vale su ajuste guardado", "Deshacer",
     // Ajuste fino
     // オン・オフは幅 180 の切り替え（新しい版の確認・SteamVR と一緒に起動）にも入るので短く（札の「: sí / no」と同じ）
-    "Cancelación de eco", "Quita el sonido del altavoz", "Filtro de ruido", "También corta sonidos bajos de la boca", "Sí", "No",
+    "Cancelación de eco", "Ganancia auto", "Filtro de ruido", "También corta sonidos bajos de la boca", "Sí", "No",
     "Sensibilidad", "Más bajo deja pasar más", "Retención", "Sonido tras hablar", "No actúa si está apagado", "Predeterminado",
     "Predeterminado: 23 % · 500 ms (SteamOS)",
     // Ajuste fino: tipo de filtro de ruido
@@ -546,6 +566,10 @@ const UiText kSpanish = {
     "El filtro de ruido constante no está en marcha (frame-mic-tuner-denoise.service)",
     "Ruido constante", ", filtro de ruido constante activado", "Falló el cambio del ruido constante (wpctl)",
     "No se puede cambiar el filtro de ruido constante (pw-cli)",
+    // Ajuste fino: ganancia automática de la cancelación de eco
+    "Reinicia el Frame para cambiar \"Ganancia auto\"",
+    "La cancelación de eco sin ganancia auto no está en marcha (frame-mic-tuner-denoise.service)",
+    ", ganancia auto apagada", "Falló el cambio de la ganancia auto (wpctl)",
     // Micrófono externo
     "Ahora se usa %s",
     "La cancelación de eco y el filtro de ruido solo actúan en el micrófono integrado de Frame. El sonido de este micrófono llega a las apps tal cual.",
@@ -627,7 +651,7 @@ const UiText kItalian = {
     "%s collegato, quindi vale l'impostazione salvata", "Annulla",
     // Regolazione fine
     // オン・オフは幅 180 の切り替え（新しい版の確認・SteamVR と一緒に起動）にも入るので短く（札の「: sì / no」と同じ）
-    "Cancellazione eco", "Toglie il suono degli altoparlanti", "Filtro rumore", "Taglia anche i suoni bassi della bocca", "Sì", "No",
+    "Cancellazione eco", "Guadagno auto", "Filtro rumore", "Taglia anche i suoni bassi della bocca", "Sì", "No",
     "Severità", "Più basso, più passa", "Tenuta", "Coda dopo il parlato", "Non ha effetto se spento", "Predefinito",
     "Predefinito: 23% · 500 ms (SteamOS)",
     // Regolazione fine: tipo di filtro rumore
@@ -637,6 +661,10 @@ const UiText kItalian = {
     "Il filtro del rumore costante non è attivo (frame-mic-tuner-denoise.service)",
     "Rumore costante", ", filtro rumore costante attivo", "Cambio del rumore costante non riuscito (wpctl)",
     "Impossibile cambiare il filtro del rumore costante (pw-cli)",
+    // Regolazione fine: guadagno automatico della cancellazione eco
+    "Riavvia il Frame per cambiare \"Guadagno auto\"",
+    "La cancellazione eco senza guadagno auto non è attiva (frame-mic-tuner-denoise.service)",
+    ", guadagno auto spento", "Cambio del guadagno auto non riuscito (wpctl)",
     // Microfono esterno
     "Ora si usa %s",
     "La cancellazione dell'eco e il filtro rumore valgono solo per il microfono integrato di Frame. Il suono di questo microfono arriva alle app così com'è.",

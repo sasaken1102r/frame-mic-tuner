@@ -46,8 +46,8 @@ constexpr double kInnerRight = kPadX + kLeftW - 22;  ///< 左のカードの中�
 constexpr double kInnerW = kInnerRight - kInnerX;
 constexpr Rect kTabsRect {kInnerX, 188, kInnerW, 56};
 constexpr Rect kPipelineRect {kInnerX, 568, kInnerW, 74};
-constexpr double kFineToggleX = 250;   ///< 細かく調整: オン / オフの切り替えの左端（左は見出し、右は説明）
-constexpr double kFineToggleW = 210;
+constexpr double kFineToggleX = 200;   ///< 細かく調整: エコー除去のオン / オフの切り替えの左端（左は見出し、右は自動音量調整）
+constexpr double kFineToggleW = 170;   ///< オン / オフの切り替えの幅（エコー除去・自動音量調整とも。「✓ Oui」が縮まない幅）
 constexpr double kSliderLabelW = 170;  ///< 細かく調整: バーの見出しと説明の幅
 constexpr Rect kVoiceCard {kRightX, 92, kRightW, 568};
 constexpr double kClipLabelW = 300;   ///< 声のチェックの履歴の 2 行目の幅（残りは波形）
@@ -802,14 +802,16 @@ std::string monthDay(const std::string& date) {
 }
 
 /**
- * 設定のまとめ（「エコー除去オン・ノイズ除去オン」「エコー除去オフ・一定の雑音を消す」）。
+ * 設定のまとめ（「エコー除去オン・ノイズ除去オン」「エコー除去オン・自動音量オフ」「エコー除去オフ・一定の雑音を消す」）。
  * @param echo エコー除去
+ * @param gain エコー除去の自動音量調整（エコー除去がオフなら見ない）
  * @param mode ノイズ除去の種類
  * @param t 言語の表
  * @return 文字列
  */
-std::string summaryText(bool echo, NoiseMode mode, const UiText& t) {
+std::string summaryText(bool echo, bool gain, NoiseMode mode, const UiText& t) {
     std::string text = echo ? t.sumEchoOn : t.sumEchoOff;
+    if (echo && !gain) text += t.sumGainOff;
     if (mode == NoiseMode::Valve) text += t.sumNsOn;
     if (mode == NoiseMode::Steady) text += t.sumSteadyOn;
     return text;
@@ -873,6 +875,7 @@ std::string errorText(MicError error, const UiText& text) {
         case MicError::WriteEcho: return text.errWriteEcho;
         case MicError::WriteNs: return text.errWriteNs;
         case MicError::WriteSteady: return text.errWriteSteady;
+        case MicError::WriteGain: return text.errWriteGain;
         case MicError::WriteSteadyDb: return text.errWriteSteadyDb;
         case MicError::WriteMute: return text.errWriteMute;
         case MicError::WriteMuteOn: return text.errWriteMuteOn;
@@ -1466,6 +1469,7 @@ void MicPanel::drawSettings(const frame_ui::Canvas& ui, const UiText& t, const C
                            : outputDisplayName(viewedKey_, endpoint != nullptr ? endpoint->name : profile.name, t);
     // 今の出口は今かかっている値、ほかの出口は覚えている値を出す
     bool echo = profile.echo;
+    bool gain = profile.autoGain;
     NoiseMode mode = profile.noiseMode();
     bool known = true;
     bool nsParamsKnown = true;
@@ -1476,6 +1480,7 @@ void MicPanel::drawSettings(const frame_ui::Canvas& ui, const UiText& t, const C
     if (viewingActive_) {
         known = state.echoKnown && state.nsKnown;
         echo = state.echo;
+        gain = !state.gainKnown || state.gain;  // 設定がまだ無い（Frame を再起動していない）間は Valve の = オン
         // 一定の雑音を消すの設定がまだ無い（Frame を再起動していない）ときは、Valve のノイズ除去だけで決める
         mode = noiseModeOf(state.ns, state.steadyKnown && state.steady);
         const NsParams& p = state.nsParams;
@@ -1488,6 +1493,8 @@ void MicPanel::drawSettings(const frame_ui::Canvas& ui, const UiText& t, const C
         steadyParamsKnown = sp.nodeKnown && sp.dbKnown;
         if (steadyParamsKnown) baseSteadyDb_ = sp.db;
     }
+    // 自動音量調整はエコー除去の中にあるので、エコー除去がオフの間は押せない
+    const bool gainEnabled = known && echo && (!viewingActive_ || state.gainKnown);
 
     drawSelectors(ui, t, config, model);
     frame_ui::drawCard(ui, kSettingsCard);
@@ -1497,26 +1504,27 @@ void MicPanel::drawSettings(const frame_ui::Canvas& ui, const UiText& t, const C
     addButton({PanelAction::TabQuick}, tabs[0]);
     addButton({PanelAction::TabFine}, tabs[1]);
     if (external) {
-        drawExternal(ui, t, model, echo, mode, outputName);
+        drawExternal(ui, t, model, echo, gain, mode, outputName);
     } else if (config.tab == PanelTab::Quick) {
-        drawQuick(ui, t, config, model, echo, mode, known, outputName);
+        drawQuick(ui, t, config, model, echo, gain, mode, known, outputName);
     } else {
-        drawFine(ui, t, model, echo, mode, known, nsParamsKnown, steadyParamsKnown);
+        drawFine(ui, t, model, echo, gain, gainEnabled, mode, known, nsParamsKnown, steadyParamsKnown);
     }
     drawPipeline(ui, t, state, external);
     drawVoice(ui, t, model.voice);
 }
 
 void MicPanel::drawQuick(const frame_ui::Canvas& ui, const UiText& t, const Config& /*config*/, const PanelModel& model,
-                         bool echo, NoiseMode mode, bool known, const std::string& outputName) {
+                         bool echo, bool gain, NoiseMode mode, bool known, const std::string& outputName) {
     const bool ns = mode != NoiseMode::Off;  // プリセットはどちらもノイズ除去オフ（Valve のも、一定の雑音を消すも使わない）
     cairo_t* cr = ui.cr;
     const std::string heading = format1(t.listeningFormat, outputName);
     ui.text(kInnerX, frame_ui::centerBaseline(262, 26, 18), ui.ellipsize(heading, 18, kInnerW, true), 18, rgb(kText), true);
 
-    // プリセット（ユーザーと決めたもの）: イヤホン = エコー除去オフ・ノイズ除去オフ、スピーカー = エコー除去オン・ノイズ除去オフ。
-    // 一致はこの 2 つだけで見る（バーの値はノイズ除去がオフなら効かない。一定の雑音を消すがオンなら、どちらとも一致しない）
-    bool matches[2] = {known && !echo && !ns, known && echo && !ns};
+    // プリセット（ユーザーと決めたもの）: イヤホン = エコー除去オフ・ノイズ除去オフ、スピーカー = エコー除去オン（自動音量調整オン）・
+    // ノイズ除去オフ。一致はこれだけで見る（バーの値はノイズ除去がオフなら効かない。一定の雑音を消すがオンなら、どちらとも一致しない。
+    // 自動音量調整はエコー除去がオフなら効かないので、イヤホンでは見ない）
+    bool matches[2] = {known && !echo && !ns, known && echo && gain && !ns};
     // プリセットを書き込んでいる間は、押したカードを選択中の見た目で保つ（途中の値で選択が外れない）
     if (viewingActive_ && presetHold_ != PanelAction::None && now_ <= presetHoldUntil_) {
         matches[0] = presetHold_ == PanelAction::Earphone;
@@ -1632,12 +1640,12 @@ void MicPanel::drawSlider(const frame_ui::Canvas& ui, double top, PanelAction ac
             rgb(active ? kText : kTextMuted), true, true);
 }
 
-void MicPanel::drawFine(const frame_ui::Canvas& ui, const UiText& t, const PanelModel& model, bool echo, NoiseMode mode,
-                        bool known, bool nsParamsKnown, bool steadyParamsKnown) {
+void MicPanel::drawFine(const frame_ui::Canvas& ui, const UiText& t, const PanelModel& model, bool echo, bool gain,
+                        bool gainEnabled, NoiseMode mode, bool known, bool nsParamsKnown, bool steadyParamsKnown) {
     cairo_t* cr = ui.cr;
     const MicState& state = model.state;
 
-    // エコー除去のオン / オフ（右に 2 行までの説明）
+    // エコー除去のオン / オフと、その右に自動音量調整のオン / オフ
     {
         const double top = 256;
         const std::string title = t.rowEcho;
@@ -1654,9 +1662,33 @@ void MicPanel::drawFine(const frame_ui::Canvas& ui, const UiText& t, const Panel
             frame_ui::drawSegmented(ui, {kFineToggleX, top, kFineToggleW, 56}, {t.on, t.off}, known ? (echo ? 0 : 1) : -1);
         addButton({PanelAction::EchoOn}, hits[0]);
         addButton({PanelAction::EchoOff}, hits[1]);
-        const double hintX = kFineToggleX + kFineToggleW + 14;
-        const std::vector<std::string> lines = wrapText(ui, t.echoHint, 14, false, kInnerRight - hintX, 2);
-        drawLines(ui, hintX, top + 28 - (static_cast<double>(lines.size()) - 1) * 10 + 5, 20, lines, 14, kTextMuted);
+
+        // 自動音量調整（Valve のエコー除去の中の AGC）。見出しは 17px（14px まで縮める）の 1 行、入らなければ 15px の 2 行
+        const Rect gainRect {kInnerRight - kFineToggleW, top, kFineToggleW, 56};
+        const double gainX = kFineToggleX + kFineToggleW + 14;
+        const double gainRoom = gainRect.x - 10 - gainX;
+        const Color gainColor = gainEnabled ? kText : kTextMuted;
+        const double gainSize = ui.fit(t.rowGain, 17, 14, gainRoom, true);
+        if (ui.measure(t.rowGain, gainSize, true) <= gainRoom) {
+            ui.text(gainX, frame_ui::centerBaseline(top, 56, gainSize), t.rowGain, gainSize, rgb(gainColor), true);
+        } else {
+            const std::vector<std::string> lines = wrapBalanced(ui, t.rowGain, 15, true, gainRoom);
+            drawLines(ui, gainX, frame_ui::centerBaseline(top, 56, 15) - 9, 18, lines, 15, gainColor, true);
+        }
+        const std::vector<Rect> gainHits =
+            frame_ui::drawSegmented(ui, gainRect, {t.on, t.off}, known ? (gain ? 0 : 1) : -1, gainEnabled);
+        addButton({PanelAction::GainOn}, gainHits[0]);
+        addButton({PanelAction::GainOff}, gainHits[1]);
+
+        // 使えない理由は一番下の行に出す（この行には場所が無い）
+        if (viewingActive_ && state.loaded) {
+            if (state.gainMissing) {
+                gainNote_ = t.gainNeedsReboot;
+            } else if (state.gainKnown && !state.gain && state.echoKnown && state.echo && !state.steadyParams.nodeKnown) {
+                gainNote_ = t.gainStopped;  // 自動音量調整なしの方が動いていないので、Valve の（自動音量調整あり）のまま
+                gainNoteDanger_ = true;
+            }
+        }
     }
 
     // ノイズ除去: 見出しの行（右に、使えない理由か今の種類の説明）と、3 つから選ぶ切り替え（横いっぱい）。
@@ -1751,8 +1783,8 @@ void MicPanel::drawFine(const frame_ui::Canvas& ui, const UiText& t, const Panel
     addButton({PanelAction::NsReset}, frame_ui::drawButton(ui, reset, t.nsReset, frame_ui::ButtonKind::Normal, nsParamsKnown));
 }
 
-void MicPanel::drawExternal(const frame_ui::Canvas& ui, const UiText& t, const PanelModel& model, bool echo, NoiseMode mode,
-                            const std::string& outputName) {
+void MicPanel::drawExternal(const frame_ui::Canvas& ui, const UiText& t, const PanelModel& model, bool echo, bool gain,
+                            NoiseMode mode, const std::string& outputName) {
     const AudioDevices& devices = model.state.devices;
     const AudioEndpoint* input = devices.findInput(devices.defaultInputKey);
     const std::string micName = format1(t.micOfFormat, input != nullptr ? input->name : devices.defaultInputKey);
@@ -1761,7 +1793,7 @@ void MicPanel::drawExternal(const frame_ui::Canvas& ui, const UiText& t, const P
     ui.text(kInnerX, 268 + 23, ui.ellipsize(now, size, kInnerW, true), size, rgb(kText), true);
     drawLines(ui, kInnerX, 306 + 19, 26, wrapText(ui, t.externalExplain, 16, false, kInnerW, 3), 16, kTextSoft);
     drawLines(ui, kInnerX, 392 + 15, 21,
-              wrapText(ui, format2(t.externalSavedFormat, outputName, summaryText(echo, mode, t)), 14, false, kInnerW, 2), 14,
+              wrapText(ui, format2(t.externalSavedFormat, outputName, summaryText(echo, gain, mode, t)), 14, false, kInnerW, 2), 14,
               kTextMuted);
     // 内蔵マイクに戻す（内蔵マイクが一覧にあるときだけ押せる）
     bool builtinAvailable = false;
@@ -1979,7 +2011,7 @@ void MicPanel::drawVoice(const frame_ui::Canvas& ui, const UiText& t, const Voic
             label = t.unknownSetting;
         } else {
             const NoiseMode mode = noiseModeOf(clip.nsKnown && clip.ns, clip.steadyKnown && clip.steady);
-            label = summaryText(clip.echo, mode, t);
+            label = summaryText(clip.echo, clip.gain, mode, t);
             if (mode == NoiseMode::Valve && clip.nsParamsKnown) {
                 char numbers[32];
                 std::snprintf(numbers, sizeof(numbers), " %.0f%%/%.0fms", clip.nsVad, clip.nsGrace);
@@ -2471,13 +2503,17 @@ void MicPanel::drawFooter(const frame_ui::Canvas& ui, const UiText& t, const Con
     ui.text(labelRight - ui.measure(startLabel, labelSize), frame_ui::centerBaseline(r.y, frame_ui::kFooterRowH, labelSize),
             startLabel, labelSize, rgb(kLabelSoft));
 
-    // 注意書き（1 行だけ）: 失敗（赤）があればそれ、無ければ自動起動が使えない理由、どちらも無ければ説明
+    // 注意書き（1 行だけ）: 失敗（赤）があればそれ、無ければ細かく調整の自動音量調整の説明、自動起動が使えない理由、
+    // どれも無ければ説明
     std::string note = t.footer;
     bool noteIsError = false;
     const MicError error = state.writeError != MicError::None ? state.writeError : state.readError;
     if (error != MicError::None) {
         note = errorText(error, t);
         noteIsError = true;
+    } else if (gainNote_ != nullptr) {
+        note = gainNote_;
+        noteIsError = gainNoteDanger_;
     } else if (state.loaded && !autoEnabled) {
         note = state.autostart == Autostart::Missing ? t.autostartMissing : t.autostartUnknown;
     }
@@ -2655,7 +2691,7 @@ void MicPanel::drawOutputPicker(const frame_ui::Canvas& ui, const UiText& t, con
         // 左: 絵・名前（設定を表示中の札）・状態（前に使った出口は絵と名前を少し薄く）
         const double cy = y + kRowH / 2;
         const double nameX = row.x + 14 + 44 + 14;
-        const std::string summary = summaryText(e.profile.echo, e.profile.noiseMode(), t);
+        const std::string summary = summaryText(e.profile.echo, e.profile.autoGain, e.profile.noiseMode(), t);
         const double summaryRight = button.x - keepGroupW - 20;
         // 要約は 14px の 1 行。名前に 220 を残せないときは 13px の 2 行にする
         const double summaryRoom = summaryRight - nameX - 220;
@@ -2785,6 +2821,8 @@ void MicPanel::render(const Config& config, const PanelModel& model) {
     const UiText& t = uiText(config.language);
     buttons_.clear();
     tracks_.clear();
+    gainNote_ = nullptr;
+    gainNoteDanger_ = false;
 
     // 地（不透明。コントラスト比は不透明な地で計算している）
     cairo_save(cr_);

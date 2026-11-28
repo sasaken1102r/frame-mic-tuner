@@ -16,13 +16,15 @@
 struct MicCommand {
     enum class Kind {
         SetEcho,           ///< エコー除去（value = オン）
+        SetGain,           ///< エコー除去の自動音量調整（value = オン）
         SetNs,             ///< ノイズ除去（value = オン）。--print の --set-ns だけが使う（パネルは SetNoiseMode）
         SetNoiseMode,      ///< ノイズ除去の種類（ns・steady。オフにする方を先に書き、2 つが同時にオンにならないようにする）
         SetSteadyDb,       ///< 一定の雑音を消す強さ（steadyDb）
         SetAutostart,      ///< 自動起動（value = 有効）
         SetNsParams,       ///< ノイズ除去の強さ（vad・grace）
-        ApplySettings,     ///< 出口の設定をまとめてかける（value = エコー除去、ns・steady、withNsParams なら vad・grace・steadyDb も）。
-                           ///< エコー除去 → ノイズ除去の種類 → 強さの順に書いてから 1 回だけ読み直す
+        ApplySettings,     ///< 出口の設定をまとめてかける（value = エコー除去、autoGain、ns・steady、withNsParams なら
+                           ///< vad・grace・steadyDb も）。自動音量調整 → エコー除去 → ノイズ除去の種類 → 強さの順に書いてから
+                           ///< 1 回だけ読み直す
         SetMute,           ///< 既定のマイクのミュート（value = ミュートする。wpctl set-mute @DEFAULT_AUDIO_SOURCE@ 1|0）
         SetDefaultOutput,  ///< 音の出口を既定にする（nodeId・nodeName。wpctl set-default）
         SetDefaultInput,   ///< 使うマイクを既定にする（nodeId・nodeName）
@@ -31,6 +33,7 @@ struct MicCommand {
     bool value = false;
     double vad = 0.0;            ///< SetNsParams・ApplySettings: 判定の厳しさ（%）
     double grace = 0.0;          ///< SetNsParams・ApplySettings: 余韻（ms）
+    bool autoGain = true;        ///< ApplySettings: エコー除去の自動音量調整
     bool ns = false;             ///< ApplySettings・SetNoiseMode: Valve のノイズ除去
     bool steady = false;         ///< ApplySettings・SetNoiseMode: 一定の雑音を消す
     double steadyDb = 0.0;       ///< SetSteadyDb・ApplySettings: 一定の雑音を消す強さ（dB）
@@ -42,6 +45,7 @@ struct MicCommand {
     /**
      * 出口の設定をまとめてかける書き込みを作る。
      * @param echo エコー除去
+     * @param autoGain エコー除去の自動音量調整
      * @param mode ノイズ除去の種類
      * @param withNsParams 強さもかけるか
      * @param vad 判定の厳しさ（%）
@@ -50,8 +54,8 @@ struct MicCommand {
      * @param onlyIfChanged 今の値と同じものは書かないか
      * @return 書き込み
      */
-    static MicCommand applySettings(bool echo, NoiseMode mode, bool withNsParams, double vad, double grace, double steadyDb,
-                                    bool onlyIfChanged);
+    static MicCommand applySettings(bool echo, bool autoGain, NoiseMode mode, bool withNsParams, double vad, double grace,
+                                    double steadyDb, bool onlyIfChanged);
 
     /**
      * ノイズ除去の種類を切り替える書き込みを作る（パネルの「細かく調整」）。

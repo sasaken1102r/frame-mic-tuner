@@ -27,6 +27,7 @@ struct VoiceClip {
     std::time_t recordedAt = 0;   ///< 録り始めた時刻
     bool echoKnown = false;       ///< 録ったときの設定
     bool echo = false;
+    bool gain = true;             ///< 録ったときにエコー除去の自動音量調整がかかっていたか（オフでも、自動音量調整なしの方が動いていなければ true）
     bool nsKnown = false;
     bool ns = false;
     bool nsParamsKnown = false;   ///< 録ったときのノイズ除去の強さが読めていたか

@@ -13,6 +13,11 @@ constexpr const char* kEchoCancelKey = "frame-mic.echo-cancel";
 constexpr const char* kNoiseSuppressionKey = "frame-mic.noise-suppression";
 /** 「一定の雑音を消す」（Frame Mic Tuner のノイズ除去）のオン・オフ。入れたあと Frame を再起動するまでは WirePlumber に無い。 */
 constexpr const char* kSteadyNoiseKey = "frame-mic.steady-noise";
+/**
+ * エコー除去の自動音量調整のオン・オフ。オフのときは Valve のエコー除去の代わりに、自動音量調整なしの方
+ * （frame-mic-tuner-denoise.service の frame_mic_ec_*）が入る。入れたあと Frame を再起動するまでは WirePlumber に無い。
+ */
+constexpr const char* kAutoGainKey = "frame-mic.auto-gain";
 /** 自動起動の systemd ユーザーサービスの名前。 */
 constexpr const char* kServiceName = "frame-mic-tuner.service";
 /** 「一定の雑音を消す」を動かす systemd ユーザーサービス（別の PipeWire のプロセスで filter-chain を動かす）。 */
@@ -37,6 +42,8 @@ constexpr double kNsGraceStep = 50.0;
 constexpr const char* kSteadyNodeName = "frame_mic_denoise_capture";
 /** 「一定の雑音を消す」のノード名の頭（つながりの段の見分け。_capture / _source が付く）。 */
 constexpr const char* kSteadyStagePrefix = "frame_mic_denoise";
+/** 自動音量調整なしのエコー除去のノード名の頭（つながりの段の見分け。_capture / _source が付く）。 */
+constexpr const char* kOwnEchoStagePrefix = "frame_mic_ec";
 /** 消す強さ（dB）の param 名と範囲（contrib/denoise/frame-mic-denoise.conf。0 dB = 何もしない）。 */
 constexpr const char* kSteadyDbParam = "denoise:Strength (dB)";
 constexpr double kSteadyDbMin = 0.0;
@@ -98,6 +105,7 @@ enum class MicError {
     WriteEcho,       ///< プリセットのうち、エコー除去の切り替えに失敗（wpctl）
     WriteNs,         ///< プリセットのうち、ノイズ除去の切り替えに失敗（wpctl）
     WriteSteady,     ///< 一定の雑音を消すの切り替えに失敗（wpctl）
+    WriteGain,       ///< 自動音量調整の切り替えに失敗（wpctl）
     WriteSteadyDb,   ///< 一定の雑音を消す強さを変えられない（pw-cli）
     WriteMute,       ///< ミュートを解除できない（wpctl set-mute ... 0）
     WriteMuteOn,     ///< ミュートできない（wpctl set-mute ... 1）
@@ -133,6 +141,9 @@ struct MicState {
     bool steadyKnown = false;   ///< 一定の雑音を消すの値が読めたか
     bool steady = false;        ///< 一定の雑音を消す（true = オン）
     bool steadyMissing = false; ///< ほかの設定は読めたのに frame-mic.steady-noise が無い（入れたあと Frame をまだ再起動していない）
+    bool gainKnown = false;     ///< 自動音量調整の値が読めたか
+    bool gain = true;           ///< 自動音量調整（true = オン。読めないときもオンとして扱う。WirePlumber の既定と同じ）
+    bool gainMissing = false;   ///< ほかの設定は読めたのに frame-mic.auto-gain が無い（入れたあと Frame をまだ再起動していない）
     bool linksKnown = false;    ///< マイクから出力までのつながりをたどれたか
     bool inUse = false;         ///< マイク使用中（通り道にフィルターが入っているか、既定のマイクから録っているアプリがいる）
     bool muteKnown = false;     ///< 既定のマイクのミュートが読めたか
